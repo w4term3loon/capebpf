@@ -1,0 +1,29 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Compiled binaries
+workspace/test_binary
+workspace/ubpf_test
+workspace/ubpf/build/
+
+# Object files
+*.o
+*.obj
+*.so
+*.a
+
+# Editor temp files
+*~
+*.swp
+*.swo
+
+# CMake
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# OpenCode agent configuration
+.opencode/
+.opencode/node_modules/
