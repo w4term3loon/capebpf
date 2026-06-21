@@ -3,15 +3,16 @@
 #include <stdint.h>
 #include "ubpf.h"
 
-int main(void)
+int
+main(void)
 {
-    /* eBPF: r0 = 42; exit */
+    /* Baseline only: eBPF r0 = 42; exit. */
     uint8_t prog[] = {
         0xb7, 0x00, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x00,
         0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     };
 
-    /* ────────── interpreter ────────── */
+    /* Interpreter baseline. */
     struct ubpf_vm *vm = ubpf_create();
     if (!vm) {
         fprintf(stderr, "ubpf_create failed\n");
@@ -32,9 +33,10 @@ int main(void)
         ubpf_destroy(vm);
         return 1;
     }
-    printf("interpreter: r0 = %llu  (expected 42)\n", (unsigned long long)result);
+    printf("interpreter: r0 = %llu  (expected 42)\n",
+        (unsigned long long)result);
 
-    /* ────────── JIT ────────── */
+    /* Stock JIT baseline. The CHERI JIT should become a separate backend. */
     errmsg = NULL;
     ubpf_jit_fn jit = ubpf_compile(vm, &errmsg);
     if (!jit) {
@@ -45,7 +47,8 @@ int main(void)
     }
 
     result = jit(NULL, 0);
-    printf("       JIT: r0 = %llu  (expected 42)\n", (unsigned long long)result);
+    printf("       JIT: r0 = %llu  (expected 42)\n",
+        (unsigned long long)result);
 
     ubpf_destroy(vm);
     return 0;

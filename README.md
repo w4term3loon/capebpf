@@ -1,108 +1,108 @@
-# CHERI-eBPF: Hardware-Enforced Memory Safety for eBPF
+# CHERI-eBPF JIT Prototype
 
-This repository holds the experimental infrastructure for my Master's thesis
-proposal: **offloading the Linux eBPF verifier's memory safety checks to CHERI
-hardware capabilities on Arm Morello**.
+This repository is a small research prototype for testing one claim:
 
-## The Problem
+> A CHERI-aware eBPF JIT can turn selected verifier-missed spatial memory bugs
+> into deterministic hardware traps.
 
-The Linux eBPF verifier is a 20k+ line static analyser that must prove every
-program safe before execution. Despite its complexity, logic bugs (e.g.,
-CVE-2023-2163, CVE-2021-4204) let malicious bytecode bypass checks and corrupt
-kernel memory. The verifier has become a vulnerability surface rather than a
-solution.
+The project does not try to replace the whole Linux eBPF verifier. The verifier
+still owns program admission, termination, helper policy, type rules, and
+control-flow restrictions. The CHERI JIT is a second enforcement layer for
+memory accesses that reach execution.
 
-## The Proposal
+## Scope
 
-Replace the eBPF arm64 JIT compiler's 64-bit integer registers with CHERI's
-**128-bit capabilities**. Every memory access then carries hardware-enforced
-bounds and permissions. Even if the verifier misses a bug, an OOB access
-triggers an immediate capability exception — no software check needed.
+The MVP uses uBPF on CheriBSD/Morello instead of the in-kernel Linux eBPF
+runtime. That keeps the experiment small while preserving the part we need to
+study: bytecode is JIT-compiled, then memory operations execute as native
+Morello instructions.
 
-## Repository Structure
+The thesis result should be phrased narrowly:
 
+1. Reproduce CVE-shaped eBPF memory-safety failures in a controlled uBPF
+   harness.
+2. Run the same bytecode through a baseline JIT and a CHERI-aware JIT.
+3. Show that the CHERI-aware JIT traps the illegal memory access before it can
+   escape the bounded object.
+4. Measure the cost of the capability-aware path.
+
+## JIT Rules
+
+The port is not a mechanical `X0-X10` to `C0-C10` rewrite.
+
+- Scalar eBPF values stay as 64-bit integer values.
+- Pointer-like eBPF values are represented as CHERI capabilities.
+- The JIT must never fabricate a valid capability from an integer.
+- Capabilities may only be derived from known roots: context, stack, map value,
+  or helper return.
+- Data loads/stores should use capability-authorized data load/store
+  instructions.
+- `CLC`/`CSC` are for loading/storing capabilities themselves, such as
+  capability spills. They are not the replacement for every normal data
+  `LDR`/`STR`.
+- Helper functions that cross a raw-pointer ABI need shims that return bounded
+  capabilities.
+
+See [JIT_PORT.md](JIT_PORT.md) for the minimal implementation contract and
+[JIT_PLAN.md](JIT_PLAN.md) for the implementation sequence.
+
+## Repository
+
+```text
+.
+|-- Dockerfile            CheriBSD + Morello QEMU SDK image
+|-- Makefile              Build, VM, compile, and run targets
+|-- JIT_PLAN.md           Feasible CHERI JIT implementation sequence
+|-- JIT_PORT.md           Minimal CHERI JIT port contract
+|-- PLAN.md               Current roadmap
+|-- proposal.pdf          Thesis proposal artifact
+`-- workspace/
+    |-- cheri_jit_contract.h  Small register-state contract for the port
+    |-- test.c                Purecap OOB smoke test
+    |-- ubpf_test.c           uBPF interpreter/JIT baseline smoke test
+    `-- ubpf/                 uBPF git submodule
 ```
-├── Dockerfile          # CheriBSD + Morello QEMU SDK image
-├── Makefile            # All targets (init, compile, run, …)
-├── proposal.pdf        # Full thesis proposal
-├── workspace/
-│   ├── test.c          # OOB demo (standard C)
-│   ├── test_binary     # Pre-compiled test (gitignored)
-│   └── ubpf/           # uBPF userspace eBPF VM (git submodule)
-└── README.md
-```
 
-## HOWTO
-
-### Prerequisites
-
-- Docker
-- `clang` (host-side, for `make compile-bpf`)
-- `git submodule` support
-
-### Quick start
+## Quick Start
 
 ```sh
-# 1. Clone and initialise submodules
 git submodule update --init --recursive
-
-# 2. Build Docker image and start the container
 make init
-
-# 3. Boot the Morello QEMU VM (waits until SSH is ready)
 make start-vm
-
-# 4. Cross-compile uBPF for pure-capability CheriBSD
 make compile-ubpf
+make compile-ubpf-test
+make run BIN=ubpf_test
+```
 
-# 5. Cross-compile a plain C test
+Purecap OOB smoke test:
+
+```sh
 make compile SRC=test.c BIN=test_binary
-
-# 6. Copy it to the VM and run it
 make run BIN=test_binary
-
-# 7. Jump into the VM interactively
-make ssh
 ```
 
-### Compiling and running eBPF programs
+`test_binary` is expected to fault in CHERI purecap mode. If it reaches the
+final print, the smoke test failed.
+
+Host-side eBPF bytecode build:
 
 ```sh
-# Write eBPF C code, compile to eBPF bytecode with host clang
 make compile-bpf SRC=my_prog.c BIN=my_prog.o
-
-# Run it through the uBPF interpreter or JIT on the VM
-make run BIN=my_ubpf_test
 ```
 
-### Day-to-day cycle
+## Current Status
 
-```sh
-make start-vm          # if the VM isn't running
-make compile SRC=... BIN=...   # rebuild
-make run BIN=...       # re-test
-```
+Done:
 
-### Cleanup
+- Morello/CheriBSD container and VM workflow.
+- Purecap C compile/run path.
+- uBPF baseline test harness file.
+- Minimal JIT-port contract.
 
-```sh
-make clean             # stop and remove the container
-```
+Next:
 
-## Makefile Reference
-
-| Target | Description |
-|---|---|
-| `init` | Build Docker image + start container |
-| `submodule-init` | `git submodule update --init --recursive` |
-| `start-vm` | Boot QEMU VM in background, wait for SSH |
-| `vm-ready` | Poll SSH until the VM is reachable |
-| `console` | Boot VM with interactive serial console |
-| `debug-gdb` | Boot VM + pause for GDB (port 1234) |
-| `compile SRC= BIN=` | Cross-compile C for purecap |
-| `compile-ubpf` | Cross-compile uBPF core into `libubpf.a` |
-| `compile-bpf SRC= BIN=` | Compile C to eBPF bytecode (host clang) |
-| `run BIN=` | SCP binary to VM + execute |
-| `ssh` | Interactive SSH session into VM |
-| `status` | Show container + VM health |
-| `clean` | Stop and remove container |
+- Check out uBPF and build the baseline interpreter/JIT.
+- Add the CHERI-aware JIT backend skeleton.
+- Add CVE-pattern tests for CVE-2023-2163 and CVE-2021-4204.
+- Add a harness that treats a CHERI capability exception as the expected secure
+  result.

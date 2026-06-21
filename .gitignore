@@ -5,7 +5,18 @@ Thumbs.db
 # Compiled binaries
 workspace/test_binary
 workspace/ubpf_test
+workspace/ubpf_test2
+workspace/exploit_tests
+workspace/exploit_tests_host
 workspace/ubpf/build/
+workspace/ubpf/build-host/
+
+# Debug / exploratory binaries
+workspace/debug_jit*
+workspace/compiled_test
+workspace/csp_test
+workspace/hello_test
+workspace/minimal_cheri_jit
 
 # Object files
 *.o

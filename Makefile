@@ -4,6 +4,7 @@ PORT = 2222
 GDB_PORT = 1234
 WORKSPACE = $(PWD)/workspace
 SSH_OPTS = -p $(PORT) -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+SCP_OPTS = -P $(PORT) -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
 
 UBPF_SRCDIR = workspace/ubpf
 UBPF_BUILDDIR = workspace/ubpf/build
@@ -19,7 +20,8 @@ CHERI_CLANG = /opt/cheri/output/morello-sdk/bin/clang
 CHERI_CFG = /opt/cheri/output/morello-sdk/bin/cheribsd-morello-purecap.cfg
 
 .PHONY: init submodule-init start-vm vm-ready console debug-gdb \
-	compile compile-ubpf compile-ubpf-test compile-bpf run ssh status clean
+	compile compile-ubpf compile-ubpf-test compile-exploit-tests \
+	compile-bpf run run-exploit-tests ssh status clean
 
 # Container lifecycle
 
@@ -96,6 +98,59 @@ compile-ubpf-test:
 		/workspace/ubpf_test.c \
 		/workspace/ubpf/build/libubpf.a
 
+compile-exploit-tests: compile-ubpf
+	docker exec $(CONTAINER_NAME) \
+		$(CHERI_CLANG) --config $(CHERI_CFG) \
+		-o /workspace/exploit_tests \
+		-I/workspace/ubpf/vm \
+		-I/workspace/ubpf/vm/inc \
+		/workspace/exploit_tests.c \
+		/workspace/ubpf/build/libubpf.a
+
+run-exploit-tests: compile-exploit-tests vm-ready
+	docker exec $(CONTAINER_NAME) \
+		scp $(SCP_OPTS) /workspace/exploit_tests root@localhost:/root/
+	docker exec $(CONTAINER_NAME) \
+		ssh $(SSH_OPTS) root@localhost "/root/exploit_tests"; \
+		status=$$?; \
+		echo "Exit code: $$status"; \
+		exit $$status
+
+# Host (non-capability) baseline: shows exploits slipping through without CHERI
+UBPF_HOST_BUILDDIR = workspace/ubpf/build-host
+UBPF_HOST_CORE = \
+	vm/ubpf_vm.c \
+	vm/ubpf_loader.c \
+	vm/ubpf_jit.c \
+	vm/ubpf_jit_support.c \
+	vm/ubpf_jit_x86_64.c \
+	vm/ubpf_instruction_valid.c
+
+.PHONY: compile-ubpf-host compile-exploit-tests-host run-exploit-tests-host
+
+compile-ubpf-host:
+	mkdir -p $(UBPF_HOST_BUILDDIR)
+	@echo "Compiling ubpf for host (x86_64, no capabilities)..."
+	@for f in $(UBPF_CORE:vm/ubpf_jit_arm64.c=vm/ubpf_jit_x86_64.c); do \
+		cc -c -O2 -I$(UBPF_SRCDIR)/vm -I$(UBPF_SRCDIR)/vm/inc \
+			-o $(UBPF_HOST_BUILDDIR)/$$(basename $$f .c).o \
+			$(UBPF_SRCDIR)/$$f 2>/dev/null; \
+	done
+	@cd $(UBPF_HOST_BUILDDIR) && ar rcs libubpf.a *.o
+	@echo "Built $(UBPF_HOST_BUILDDIR)/libubpf.a"
+
+compile-exploit-tests-host: compile-ubpf-host
+	cc -O2 -o workspace/exploit_tests_host \
+		-I$(UBPF_SRCDIR)/vm -I$(UBPF_SRCDIR)/vm/inc \
+		workspace/exploit_tests.c \
+		$(UBPF_HOST_BUILDDIR)/libubpf.a
+	@echo "Built workspace/exploit_tests_host"
+
+run-exploit-tests-host: compile-exploit-tests-host
+	@echo ""
+	@echo "########## NON-CAPABILITY BASELINE (x86_64 host) ##########"
+	@./workspace/exploit_tests_host
+
 compile-bpf:
 	clang -O2 -target bpf -c $(WORKSPACE)/$(SRC) -o $(WORKSPACE)/$(BIN)
 
@@ -103,7 +158,7 @@ compile-bpf:
 
 run: vm-ready
 	docker exec $(CONTAINER_NAME) \
-		scp $(SSH_OPTS) /workspace/$(BIN) root@localhost:/root/
+		scp $(SCP_OPTS) /workspace/$(BIN) root@localhost:/root/
 	docker exec $(CONTAINER_NAME) \
 		ssh $(SSH_OPTS) root@localhost "/root/$(BIN)"; \
 		status=$$?; \
