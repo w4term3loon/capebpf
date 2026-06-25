@@ -14,6 +14,7 @@ UBPF_CORE = \
 	vm/ubpf_jit.c \
 	vm/ubpf_jit_support.c \
 	vm/ubpf_jit_arm64.c \
+	vm/ubpf_jit_arm64_cheri.c \
 	vm/ubpf_instruction_valid.c
 
 CHERI_CLANG = /opt/cheri/output/morello-sdk/bin/clang

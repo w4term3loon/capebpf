@@ -17,6 +17,8 @@ workspace/compiled_test
 workspace/csp_test
 workspace/hello_test
 workspace/minimal_cheri_jit
+workspace/test42
+workspace/test_prologue
 
 # Object files
 *.o
