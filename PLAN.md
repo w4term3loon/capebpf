@@ -1,7 +1,8 @@
 # Roadmap
 
-Current status: Phase 1 is done. Phase 2 starts with the smallest useful JIT
-port, not a full Linux verifier replacement.
+Current status: Phase 1 done, Milestone 1 (backend skeleton) done,
+Milestone 2 (scalar ALU) done. M3 (bounded stack) is blocked by a
+QEMU Morello limitation — see notes below.
 
 ## MVP Claim
 
@@ -27,15 +28,24 @@ reach native execution.
 
 ## Phase 2: JIT Base
 
-- [ ] Check out and build the uBPF submodule.
-- [ ] Verify baseline uBPF interpreter and stock JIT on CheriBSD purecap.
-- [ ] Add a separate CHERI-aware arm64/Morello JIT backend.
+- [x] Check out and build the uBPF submodule.
+- [x] Verify baseline uBPF interpreter and stock JIT on CheriBSD purecap.
+- [x] Add a separate CHERI-aware arm64/Morello JIT backend.
+- [x] Milestone 1: `mov imm` + `exit` run through the CHERI JIT on purecap.
+- [x] Milestone 2: Scalar ALU (`mov reg`, `add/sub` imm+reg) — tested and
+      matching the interpreter on both x86_64 and purecap.
 - [ ] Track each eBPF register as either scalar or capability.
 - [ ] Preserve capability provenance across pointer arithmetic, spills, reloads,
       and helper returns.
 - [ ] Emit capability-authorized data loads/stores for pointer-based memory
       access.
 - [ ] Use `CLC`/`CSC` only when loading or storing capabilities themselves.
+
+> **Milestone 3 (bounded stack) is currently blocked**: any store/load
+> instruction executed from mmap'd PROT_EXEC memory crashes with SIGPROT
+> on QEMU Morello. Next step is to investigate separating the eBPF stack
+> allocation (RW only, not executable) from the JIT code page, or fall
+> back to the coarse DDC sandboxing allowed by the Stop Conditions.
 
 ## Phase 3: CVE-Pattern Tests
 

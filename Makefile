@@ -152,6 +152,36 @@ run-exploit-tests-host: compile-exploit-tests-host
 	@echo "########## NON-CAPABILITY BASELINE (x86_64 host) ##########"
 	@./workspace/exploit_tests_host
 
+# M2: Scalar ALU tests — mov, add, sub (imm and reg)
+.PHONY: compile-m2-tests run-m2-tests run-m2-tests-host
+
+compile-m2-tests: compile-ubpf
+	docker exec $(CONTAINER_NAME) \
+		$(CHERI_CLANG) --config $(CHERI_CFG) \
+		-o /workspace/test_m2 \
+		-I/workspace/ubpf/vm \
+		-I/workspace/ubpf/vm/inc \
+		/workspace/test_m2.c \
+		/workspace/ubpf/build/libubpf.a
+
+run-m2-tests: compile-m2-tests vm-ready
+	docker exec $(CONTAINER_NAME) \
+		scp $(SCP_OPTS) /workspace/test_m2 root@localhost:/root/
+	docker exec $(CONTAINER_NAME) \
+		ssh $(SSH_OPTS) root@localhost "/root/test_m2"; \
+		status=$$?; \
+		echo "Exit code: $$status"; \
+		exit $$status
+
+run-m2-tests-host: compile-ubpf-host
+	cc -O2 -o workspace/test_m2 \
+		-I$(UBPF_SRCDIR)/vm -I$(UBPF_SRCDIR)/vm/inc \
+		workspace/test_m2.c \
+		$(UBPF_HOST_BUILDDIR)/libubpf.a
+	@echo ""
+	@echo "########## M2 SCALAR ALU — x86_64 host ##########"
+	@./workspace/test_m2
+
 compile-bpf:
 	clang -O2 -target bpf -c $(WORKSPACE)/$(SRC) -o $(WORKSPACE)/$(BIN)
 
