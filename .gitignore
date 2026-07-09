@@ -21,15 +21,15 @@ workspace/test42
 workspace/test_prologue
 workspace/test_b
 workspace/test_jit_dump
+workspace/test_instruction_matrix
 workspace/test_m2
+workspace/test_m2_jmp
 workspace/test_m3
 workspace/test_m3_dump
 workspace/test_m3_dump2
 workspace/test_m3_dump3
 workspace/test_m3_dump4
 workspace/test_m3_isolated
-workspace/test_b
-workspace/test_jit_dump
 
 # Object files
 *.o
