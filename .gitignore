@@ -4,6 +4,7 @@ Thumbs.db
 
 # Compiled binaries
 workspace/test_binary
+workspace/cheri-vm.log
 workspace/ubpf_test
 workspace/ubpf_test2
 workspace/exploit_tests
@@ -18,8 +19,16 @@ workspace/csp_test
 workspace/hello_test
 workspace/minimal_cheri_jit
 workspace/test42
+workspace/test_cheri_translate_reject
+workspace/test_cheri_context_load
+workspace/test_cheri_direct_jit_repro
+workspace/test_cheri_loader_jit_repro
+workspace/test_cheri_objjit_compile
+workspace/test_cheri_objjit_context_repro
+workspace/test_cheri_tail_helper_context
 workspace/test_prologue
 workspace/test_b
+workspace/test_file_backed
 workspace/test_jit_dump
 workspace/test_instruction_matrix
 workspace/test_m2
@@ -30,6 +39,13 @@ workspace/test_m3_dump2
 workspace/test_m3_dump3
 workspace/test_m3_dump4
 workspace/test_m3_isolated
+workspace/test_perms
+workspace/test_tag
+workspace/test_tag2
+workspace/test_text_store
+workspace/probe_*
+workspace/cheri_objjit_*.S
+*.core
 
 # Object files
 *.o

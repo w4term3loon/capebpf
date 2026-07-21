@@ -5,7 +5,15 @@
 #include <sys/wait.h>
 #include "ubpf.h"
 
+#if defined(__CHERI_PURE_CAPABILITY__)
+#define JIT_LABEL "cheri_jit"
+#else
+#define JIT_LABEL "jit"
+#endif
+
 static void test(const char *name, const uint8_t *prog, size_t plen, uint64_t expected) {
+    (void)name;
+
     pid_t p = fork();
     if (p == 0) {
         struct ubpf_vm *vm = ubpf_create();
@@ -26,17 +34,17 @@ static void test(const char *name, const uint8_t *prog, size_t plen, uint64_t ex
         struct ubpf_vm *vm = ubpf_create();
         char *e = NULL;
         int lc = ubpf_load(vm, prog, plen, &e);
-        if (lc != 0) { printf("  cheri_jit: LOAD FAIL: %s\n", e); _exit(1); }
+        if (lc != 0) { printf("  %s: LOAD FAIL: %s\n", JIT_LABEL, e); _exit(1); }
         ubpf_jit_fn j = ubpf_compile(vm, &e);
-        if (!j) { printf("  cheri_jit: compile FAILED: %s\n", e); _exit(1); }
+        if (!j) { printf("  %s: compile FAILED: %s\n", JIT_LABEL, e); _exit(1); }
         uint64_t r = j(NULL, 0);
-        printf("  cheri_jit: r0=%llu (expect %llu) %s\n",
+        printf("  %s: r0=%llu (expect %llu) %s\n", JIT_LABEL,
             (unsigned long long)r, (unsigned long long)expected,
             r == expected ? "OK" : "MISMATCH");
         ubpf_destroy(vm); _exit(0);
     }
     s = 0; waitpid(p, &s, 0);
-    if (WIFSIGNALED(s)) printf("  cheri_jit: CRASH sig %d\n", WTERMSIG(s));
+    if (WIFSIGNALED(s)) printf("  %s: CRASH sig %d\n", JIT_LABEL, WTERMSIG(s));
 }
 
 #define INSN(op,dst,src,off,imm) (uint8_t){op}, (uint8_t)((dst)|((src)<<4)), \

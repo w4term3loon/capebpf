@@ -3,6 +3,13 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include "ubpf.h"
+
+#if defined(__CHERI_PURE_CAPABILITY__)
+#define JIT_LABEL "cheri_jit"
+#else
+#define JIT_LABEL "jit"
+#endif
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     uint8_t prog[] = {0xb7,0,0,0,0x2a,0,0,0, 0x95,0,0,0,0,0,0,0};
@@ -14,7 +21,7 @@ int main(void) {
     int rc = ubpf_exec(vm, NULL, 0, &r);
     printf("interp rc=%d r0=%llu\n", rc, (unsigned long long)r);
     ubpf_destroy(vm);
-    /* Test: CHERI JIT in fork */
+    /* Test: JIT in fork */
     pid_t p = fork();
     if (p == 0) {
         vm = ubpf_create();
@@ -22,11 +29,11 @@ int main(void) {
         ubpf_jit_fn j = ubpf_compile(vm, &e);
         if (!j) {printf("compile failed: %s\n", e); _exit(1);}
         r = j(NULL, 0);
-        printf("cheri_jit r0=%llu\n", (unsigned long long)r);
+        printf("%s r0=%llu\n", JIT_LABEL, (unsigned long long)r);
         _exit(0);
     }
     int s; waitpid(p, &s, 0);
-    if (WIFSIGNALED(s)) printf("cheri_jit crash: signal %d\n", WTERMSIG(s));
-    else printf("cheri_jit exit: %d\n", WEXITSTATUS(s));
+    if (WIFSIGNALED(s)) printf("%s crash: signal %d\n", JIT_LABEL, WTERMSIG(s));
+    else printf("%s exit: %d\n", JIT_LABEL, WEXITSTATUS(s));
     return 0;
 }

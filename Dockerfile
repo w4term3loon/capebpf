@@ -1,18 +1,25 @@
 FROM ctsrd/cheribsd-sdk-qemu-morello-purecap:latest
 
-# Switch to root to install host container dependencies
 USER root
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    make \
-    cmake \
-    libarchive-dev \
-    openssh-client \
-    && rm -rf /var/lib/apt/lists/*
 
-# Switch back to the unprivileged user expected by cheribuild
-USER cheri
+# The base image already contains make, ssh/scp, QEMU, and the Morello SDK.
+# cheribuild still probes pkg-config for libarchive before run-morello-purecap;
+# provide the minimal answer needed for that dependency check without requiring
+# Ubuntu mirror access during image build.
+RUN if ! command -v pkg-config >/dev/null 2>&1; then \
+      printf '%s\n' \
+        '#!/bin/sh' \
+        'if [ "$1" = "--modversion" ] && [ "$2" = "libarchive" ]; then' \
+        '  echo 3.0.0' \
+        '  exit 0' \
+        'fi' \
+        'echo "pkg-config wrapper only supports --modversion libarchive" >&2' \
+        'exit 1' > /usr/local/bin/pkg-config; \
+      chmod +x /usr/local/bin/pkg-config; \
+    fi
 
-# Persist workspace path for Makefile use
+COPY tools/cheri_vm.py /usr/local/bin/cheri-vm
+RUN chmod +x /usr/local/bin/cheri-vm
+
 ENV WORKSPACE=/workspace
 WORKDIR ${WORKSPACE}
