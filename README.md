@@ -73,7 +73,7 @@ make host-check
 make cheri-check
 ```
 
-Experimental direct-JIT checks, now passing for the narrow mmap/C64 context-load path:
+Experimental direct-JIT checks, now passing for the restricted mmap/C64 context and stack memory path:
 
 ```sh
 sg docker -c 'make run-cheri-direct-jit-repro'
@@ -114,15 +114,18 @@ confirms that verifier-invalid programs can pass through the non-capability JIT.
 
 The CHERI backend exists in the uBPF submodule and should currently be read as
 a narrow object-bounds prototype, not as a completed eBPF verifier replacement.
-Unsupported stores, stack loads, local calls, and atomics are rejected during
-CHERI translation. The supported path carries the `R1` context pointer as a
-CHERI capability through direct anonymous mmap JIT code; in-bounds context
-loads return successfully and out-of-bounds context loads trap under CHERI
-bounds. The old helper/object routes remain as fallback evidence, but the
-primary route is now the direct mmap JIT entered in Morello C64 mode.
+Unsupported context stores, capability stores, local calls, atomics, and
+untracked scalar-pointer loads are rejected during CHERI translation. The
+supported path carries the `R1` context pointer and `R10` stack pointer as
+CHERI capabilities through direct anonymous mmap JIT code; in-bounds
+context/stack scalar memory accesses return successfully, out-of-bounds
+accesses trap under CHERI bounds, and uninitialized stack scalar reads return
+zero from the cleared bounded stack. The old helper/object routes remain as
+fallback evidence, but the primary route is now the direct mmap JIT entered in
+Morello C64 mode.
 
 Purecap results in `docs/` are retained as captured research notes. The latest
 audit verified Docker initialization, purecap compilation, x86_64 host tests,
-host-side CHERI translation rejection tests, purecap CHERI scalar execution, and CHERI translation through
+host-side CHERI translation rejection tests, purecap CHERI scalar execution, direct mmap CHERI context/stack memory tests, and CHERI translation through
 the single-user VM runner. Multi-user SSH startup is still blocked by the
 CheriBSD guest hanging at `Starting devd.`. See [docs/project_state.md](docs/project_state.md) for the current verified state and next steps.

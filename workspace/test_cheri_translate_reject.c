@@ -62,7 +62,9 @@ expect_translate_reject(const char *name, const uint8_t *prog, size_t prog_len)
 
     int matched = errmsg &&
         (strstr(errmsg, "does not yet support memory opcode") ||
-         strstr(errmsg, "only supports loads from the R1 context capability") ||
+         strstr(errmsg, "tracked context or stack capabilities") ||
+         strstr(errmsg, "tracked stack capabilities") ||
+         strstr(errmsg, "does not allow storing a capability value") ||
          strstr(errmsg, "does not allow returning a capability value"));
     printf("%s %s: CHERI translate rejected: %s\n",
         matched ? "OK  " : "FAIL", name, errmsg ? errmsg : "<no error>");
@@ -96,8 +98,50 @@ main(void)
         INSN(0x95, 0, 0, 0, 0),
     };
 
+    uint8_t context_store[] = {
+        INSN(0xb7, 0, 0, 0, 42),
+        INSN(0x7b, 1, 0, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
+    uint8_t capability_stack_store[] = {
+        INSN(0xbf, 2, 1, 0, 0),
+        INSN(0x7b, 0xa, 2, -8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
     uint8_t context_oob_load[] = {
         INSN(0x79, 0, 1, 4096, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
+    uint8_t context_ptr_add_load[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0x07, 6, 0, 0, 8),
+        INSN(0x79, 0, 6, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
+    uint8_t context_ptr_add_oob_load[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0x07, 6, 0, 0, 4096),
+        INSN(0x79, 0, 6, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
+    uint8_t stack_ptr_add_store_load[] = {
+        INSN(0xbf, 2, 10, 0, 0),
+        INSN(0x07, 2, 0, 0, -16),
+        INSN(0xb7, 0, 0, 0, 42),
+        INSN(0x7b, 2, 0, 8, 0),
+        INSN(0x79, 0, 2, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
+    uint8_t uninit_stack_ptr_add_load[] = {
+        INSN(0xbf, 2, 10, 0, 0),
+        INSN(0x07, 2, 0, 0, -8),
+        INSN(0x79, 0, 2, 0, 0),
         INSN(0x95, 0, 0, 0, 0),
     };
 
@@ -117,8 +161,14 @@ main(void)
     failures += expect_translate_ok("scalar_mov_exit", scalar, sizeof(scalar));
     failures += expect_translate_ok("context_load", context_load, sizeof(context_load));
     failures += expect_translate_ok("context_oob_load", context_oob_load, sizeof(context_oob_load));
-    failures += expect_translate_reject("stack_store_load", stack_store_load, sizeof(stack_store_load));
-    failures += expect_translate_reject("immediate_stack_store", immediate_stack_store, sizeof(immediate_stack_store));
+    failures += expect_translate_ok("context_ptr_add_load", context_ptr_add_load, sizeof(context_ptr_add_load));
+    failures += expect_translate_ok("context_ptr_add_oob_load", context_ptr_add_oob_load, sizeof(context_ptr_add_oob_load));
+    failures += expect_translate_ok("stack_store_load", stack_store_load, sizeof(stack_store_load));
+    failures += expect_translate_ok("stack_ptr_add_store_load", stack_ptr_add_store_load, sizeof(stack_ptr_add_store_load));
+    failures += expect_translate_ok("uninit_stack_ptr_add_load", uninit_stack_ptr_add_load, sizeof(uninit_stack_ptr_add_load));
+    failures += expect_translate_ok("immediate_stack_store", immediate_stack_store, sizeof(immediate_stack_store));
+    failures += expect_translate_reject("context_store", context_store, sizeof(context_store));
+    failures += expect_translate_reject("capability_stack_store", capability_stack_store, sizeof(capability_stack_store));
     failures += expect_translate_reject("clobbered_r1_load", clobbered_r1_load, sizeof(clobbered_r1_load));
     failures += expect_translate_reject("pointer_leak", pointer_leak, sizeof(pointer_leak));
     return failures == 0 ? 0 : 1;

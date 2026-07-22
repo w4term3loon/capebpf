@@ -131,7 +131,8 @@ wait_for_child(pid_t pid, int expect_trap)
 }
 
 static int
-run_compile_and_call(const char *name, const uint8_t *prog, size_t prog_len, int expect_trap)
+run_compile_and_call(
+    const char *name, const uint8_t *prog, size_t prog_len, uint64_t expected_result, int expect_trap)
 {
     pid_t pid = fork();
     if (pid == 0) {
@@ -149,7 +150,7 @@ run_compile_and_call(const char *name, const uint8_t *prog, size_t prog_len, int
         print_cap("compiled fn", (const void *)fn);
         uint64_t result = fn(ctx, sizeof(ctx));
         printf("  returned              0x%llx\n", (unsigned long long)result);
-        int ok = result == 0xfeedfacecafebeefULL;
+        int ok = result == expected_result;
         ubpf_destroy(vm);
         if (expect_trap) {
             _exit(20);
@@ -185,7 +186,9 @@ expect_compile_reject(const char *name, const uint8_t *prog, size_t prog_len)
 
     int matched = errmsg &&
         (strstr(errmsg, "does not yet support memory opcode") ||
-         strstr(errmsg, "only supports loads from the R1 context capability") ||
+         strstr(errmsg, "tracked context or stack capabilities") ||
+         strstr(errmsg, "tracked stack capabilities") ||
+         strstr(errmsg, "does not allow storing a capability value") ||
          strstr(errmsg, "does not allow returning a capability value"));
     printf("%s %s: ubpf_compile rejected: %s\n",
         matched ? "OK  " : "FAIL", name, errmsg ? errmsg : "<no error>");
@@ -220,11 +223,67 @@ main(void)
         INSN(0x79, 0, 6, 4096, 0),
         INSN(0x95, 0, 0, 0, 0),
     };
+    uint8_t context_ptr_add_load_8[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0x07, 6, 0, 0, 8),
+        INSN(0x79, 0, 6, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t context_ptr_add_load_4096[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0x07, 6, 0, 0, 4096),
+        INSN(0x79, 0, 6, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
     uint8_t stack_store_load[] = {
         INSN(0xb7, 0, 0, 0, 42),
         INSN(0x7b, 0xa, 0, -8, 0),
         INSN(0xb7, 0, 0, 0, 0),
         INSN(0x79, 0, 0xa, -8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t immediate_stack_store_load[] = {
+        INSN(0x7a, 0xa, 0, -8, 42),
+        INSN(0x79, 0, 0xa, -8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_ptr_add_store_load[] = {
+        INSN(0xbf, 2, 10, 0, 0),
+        INSN(0x07, 2, 0, 0, -16),
+        INSN(0xb7, 0, 0, 0, 42),
+        INSN(0x7b, 2, 0, 8, 0),
+        INSN(0x79, 0, 2, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t uninit_stack_ptr_add_load[] = {
+        INSN(0xbf, 2, 10, 0, 0),
+        INSN(0x07, 2, 0, 0, -8),
+        INSN(0x79, 0, 2, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_ptr_add_load_oob[] = {
+        INSN(0xbf, 2, 10, 0, 0),
+        INSN(0x07, 2, 0, 0, -4104),
+        INSN(0x79, 0, 2, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_store_oob[] = {
+        INSN(0xb7, 0, 0, 0, 42),
+        INSN(0x7b, 0xa, 0, -4104, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_load_oob[] = {
+        INSN(0x79, 0, 0xa, -4104, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t context_store[] = {
+        INSN(0xb7, 0, 0, 0, 42),
+        INSN(0x7b, 1, 0, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t capability_stack_store[] = {
+        INSN(0xbf, 2, 1, 0, 0),
+        INSN(0x7b, 0xa, 2, -8, 0),
         INSN(0x95, 0, 0, 0, 0),
     };
     uint8_t clobbered_r1_load[] = {
@@ -234,11 +293,21 @@ main(void)
     };
 
     int failures = 0;
-    failures += run_compile_and_call("context_load_8", context_load_8, sizeof(context_load_8), 0);
-    failures += run_compile_and_call("context_load_4096", context_load_4096, sizeof(context_load_4096), 1);
-    failures += run_compile_and_call("context_alias_load_8", context_alias_load_8, sizeof(context_alias_load_8), 0);
-    failures += run_compile_and_call("context_alias_load_4096", context_alias_load_4096, sizeof(context_alias_load_4096), 1);
-    failures += expect_compile_reject("stack_store_load", stack_store_load, sizeof(stack_store_load));
+    failures += run_compile_and_call("context_load_8", context_load_8, sizeof(context_load_8), 0xfeedfacecafebeefULL, 0);
+    failures += run_compile_and_call("context_load_4096", context_load_4096, sizeof(context_load_4096), 0, 1);
+    failures += run_compile_and_call("context_alias_load_8", context_alias_load_8, sizeof(context_alias_load_8), 0xfeedfacecafebeefULL, 0);
+    failures += run_compile_and_call("context_alias_load_4096", context_alias_load_4096, sizeof(context_alias_load_4096), 0, 1);
+    failures += run_compile_and_call("context_ptr_add_load_8", context_ptr_add_load_8, sizeof(context_ptr_add_load_8), 0xfeedfacecafebeefULL, 0);
+    failures += run_compile_and_call("context_ptr_add_load_4096", context_ptr_add_load_4096, sizeof(context_ptr_add_load_4096), 0, 1);
+    failures += run_compile_and_call("stack_store_load", stack_store_load, sizeof(stack_store_load), 42, 0);
+    failures += run_compile_and_call("immediate_stack_store_load", immediate_stack_store_load, sizeof(immediate_stack_store_load), 42, 0);
+    failures += run_compile_and_call("stack_ptr_add_store_load", stack_ptr_add_store_load, sizeof(stack_ptr_add_store_load), 42, 0);
+    failures += run_compile_and_call("uninit_stack_ptr_add_load", uninit_stack_ptr_add_load, sizeof(uninit_stack_ptr_add_load), 0, 0);
+    failures += run_compile_and_call("stack_store_oob", stack_store_oob, sizeof(stack_store_oob), 0, 1);
+    failures += run_compile_and_call("stack_load_oob", stack_load_oob, sizeof(stack_load_oob), 0, 1);
+    failures += run_compile_and_call("stack_ptr_add_load_oob", stack_ptr_add_load_oob, sizeof(stack_ptr_add_load_oob), 0, 1);
+    failures += expect_compile_reject("context_store", context_store, sizeof(context_store));
+    failures += expect_compile_reject("capability_stack_store", capability_stack_store, sizeof(capability_stack_store));
     failures += expect_compile_reject("clobbered_r1_load", clobbered_r1_load, sizeof(clobbered_r1_load));
 
     if (failures == 0) {

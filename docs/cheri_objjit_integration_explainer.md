@@ -360,21 +360,16 @@ CHERI implementation needs to decide:
 - how capability state is tracked through moves and scalar clobbers;
 - which stack loads/stores are admitted.
 
-The current backend deliberately does not solve that yet. It tracks `R10` as a
-stack-capability kind and rejects unsupported stack memory operations.
+The backend now solves the first stack slice for the direct mmap route. It
+derives `R10` as a bounded stack capability, clears that bounded stack in the
+prologue, preserves stack capability provenance through `MOV64_REG` and 64-bit
+immediate `ADD/SUB`, and admits scalar stack loads/stores through tracked stack
+capabilities. Stack OOB accesses trap with `PROT_CHERI_BOUNDS`; uninitialized
+scalar stack reads return zero.
 
-That is the right scope for now. The first object-backed JIT milestone should
-stay focused on context loads through the original `R1` capability:
-
-```text
-R1 context capability loads only
-no stack memory
-no stores
-no atomics
-no helper-returned pointers
-```
-
-Then stack support can be added as a separate milestone.
+The remaining stack-related work is no longer basic load/store enablement. It is
+control-flow-sensitive provenance, additional memory widths, capability spills,
+and integration with helper/map-returned pointer roots.
 
 ## Current Integrated Prototype
 
@@ -427,27 +422,31 @@ ubpf_compile(...)
 fn(ctx, ctx_len)
 ```
 
-Under CheriBSD purecap, the integrated `ubpf_compile()` path now:
+This section records the object-backed detour. It is now superseded by the
+direct anonymous mmap JIT path entered in Morello C64 mode. The object-backed
+route is retained as fallback/reference evidence and can still be selected with
+`UBPF_CHERI_USE_OBJJIT=1`, but it is not the primary implementation route.
 
-1. Checks whether the loaded program is either `LDXDW r0, [r1+offset]; EXIT`
-   or a single `MOV64_REG rN, r1` alias followed by that load and `EXIT`.
-2. Requires the source register to be the original `R1` context capability or
-   that one direct alias.
-3. Requires the load offset to be non-negative and 8-byte aligned.
-4. Loads the matching object-backed artifact, currently
-   `/mnt/cheri_objjit_offset_<offset>.so` by default.
-5. Resolves `bpf_entry` with `dlsym`.
-6. Stores the `dlopen` handle on the VM so `ubpf_destroy()` can `dlclose()` it.
-7. Returns the loader-created `bpf_entry` function capability as the JIT entry.
+Under CheriBSD purecap, the current default `ubpf_compile()` path now:
 
-Unsupported programs still fail closed through the CHERI translator policy. The
-integrated test verifies that stack stores/loads and a clobbered-`R1` context
-load are rejected at compile time.
+1. Emits anonymous mmap direct-JIT code and enters it through a capmode address
+   (`addr | 1`) so generated code runs in Morello C64 state.
+2. Tracks context and stack capability roots: `R1` starts as the context
+   capability, and `R10` starts as a bounded eBPF stack capability.
+3. Preserves capability provenance across `MOV64_REG` and 64-bit immediate
+   `ADD/SUB` for tracked context/stack capabilities.
+4. Allows scalar loads through tracked context capabilities and scalar
+   loads/stores through tracked stack capabilities.
+5. Clears the bounded eBPF stack in the prologue, so uninitialized scalar stack
+   reads return zero rather than prior native stack contents.
+6. Rejects context stores, capability stores, atomics, local calls,
+   helper/map-returned pointers, and loads from untracked scalar pointers.
 
 ## Observed Integrated Result
 
-`sg docker -c 'make run-cheri-objjit-compile'` currently passes. The observed
-important behavior is:
+`sg docker -c 'make run-cheri-objjit-compile'` currently passes. Despite the
+historical target name, this exercises the default direct mmap CHERI JIT unless
+`UBPF_CHERI_USE_OBJJIT=1` is set. The important behavior is:
 
 ```text
 context_load_8:
@@ -455,82 +454,75 @@ context_load_8:
     fn(ctx, sizeof(ctx)) returns 0xfeedfacecafebeef
 
 context_load_4096:
-    ubpf_compile returns a sealed sentry function capability
     fn(ctx, sizeof(ctx)) traps with PROT_CHERI_BOUNDS
 
-context_alias_load_8:
-    r6 = r1; r0 = *(u64 *)(r6 + 8); exit returns 0xfeedfacecafebeef
+context_alias_load_8 / context_ptr_add_load_8:
+    tracked aliases and immediate pointer arithmetic preserve the context
+    capability and return 0xfeedfacecafebeef
 
-context_alias_load_4096:
-    r6 = r1; r0 = *(u64 *)(r6 + 4096); exit traps with PROT_CHERI_BOUNDS
+context_alias_load_4096 / context_ptr_add_load_4096:
+    tracked aliases and immediate pointer arithmetic trap with PROT_CHERI_BOUNDS
 
-stack_store_load:
-    ubpf_compile rejects unsupported memory opcode 0x7b
+stack_store_load / immediate_stack_store_load / stack_ptr_add_store_load:
+    in-bounds stack scalar stores and loads return 42
 
-clobbered_r1_load:
-    ubpf_compile rejects because R1 is no longer the context capability
+uninit_stack_ptr_add_load:
+    returns 0 from the zeroed bounded eBPF stack
+
+stack_store_oob / stack_load_oob / stack_ptr_add_load_oob:
+    trap with PROT_CHERI_BOUNDS
+
+context_store / capability_stack_store / clobbered_r1_load:
+    rejected at compile time
 ```
 
 That is the current strongest result for the thesis direction: a uBPF-loaded
-program reaches a JIT-compiled entry point where generated object-backed Morello
-code performs the memory operation directly, and CHERI enforces the context
-object bounds.
+program reaches a JIT-compiled entry point where generated direct mmap Morello
+code performs supported memory operations itself, and CHERI enforces context
+and stack bounds for those operations.
 
 ## Remaining Blocking Factors
 
-The main blocker is no longer proving that direct generated object-backed memory
-operations can work. That is proven for the narrow context-load shape. The
-remaining blockers are engineering scope and generality:
+The main blocker is no longer code loading or basic stack memory. The remaining
+blockers are provenance generality and broader eBPF coverage:
 
-1. `ubpf_compile()` currently selects pre-generated offset-named shared objects.
-   It does not yet emit, compile, and load a fresh per-program object by itself.
-2. The admitted instruction subset is intentionally tiny: one final 64-bit
-   context load and `exit`, optionally preceded by one direct `R1` alias.
-3. Stack memory, stores, atomics, helper-returned pointers, and map-value
-   accesses are still rejected.
-4. The raw anonymous mmap JIT path still has the lower-level in-bounds
-   `PROT_CHERI_TAG` failure. That blocker is now resolved by entering the mmap code through a capmode address (`addr | 1`); keep the repro as a regression test.
-5. Object-backed code cannot be patched like the existing raw JIT buffer, so
-   late external function registration currently fails closed for object-JIT
-   code.
+1. Branch joins are not yet modeled precisely; a future pass must ensure a
+   register is capability-kind only if all reaching paths preserve that
+   provenance.
+2. Memory-width coverage should be expanded and tested for `B`, `H`, `W`, `DW`,
+   and signed loads.
+3. Helper-returned pointers and map values need explicit bounded capability
+   roots before helper/map memory can be admitted.
+4. Atomics, capability spills, context stores, and local calls remain rejected.
+5. The object-backed route is no longer required for the main path, but remains
+   useful as a reference for loader-created purecap code.
 
 ## Sensible Next Iteration
 
-The next iteration should remove the prebuilt-artifact shortcut while keeping
-the same narrow safety policy.
+The next iteration should harden provenance while preserving fail-closed
+behavior.
 
 Goal:
 
 ```text
-make `ubpf_compile()` generate and load the object-backed artifact for the
-proven direct and single-alias context-load shapes instead of selecting a
-prebuilt file
+make branch/control-flow handling preserve capability-kind soundness, then
+expand memory widths for the already-supported context and stack roots
 ```
 
 Concrete scope:
 
-1. Keep `run-cheri-objjit-context-repro` as the reference proof.
-2. Keep `run-cheri-objjit-compile` as the integrated acceptance test.
-3. Move the object generation logic from the Makefile/Python prototype toward a
-   callable compile step.
-4. Generate a unique temporary Morello assembly/object/shared-object artifact
-   for the loaded eBPF bytes.
-5. Load that artifact with `dlopen`, resolve `bpf_entry`, and keep the current
-   `dlclose` VM lifetime cleanup.
-6. Preserve the fail-closed policy for unsupported memory behavior.
-
-Non-goals for that iteration:
-
-- no stack support;
-- no stores;
-- no atomics;
-- no helper-returned pointer support;
-- no attempt to fix raw anonymous mmap JIT memory;
-- no broad eBPF instruction coverage.
+1. Keep `run-cheri-objjit-context-repro` as the object-backed reference proof.
+2. Keep `run-cheri-objjit-compile` as the direct mmap integrated acceptance
+   test.
+3. Add tests where one branch preserves a capability register and another path
+   clobbers it; the join must reject later capability loads.
+4. Add byte/half/word/doubleword stack and context memory tests.
+5. Keep helper/map pointers, atomics, capability stores, context stores, and
+   local calls rejected until their provenance rules are explicit.
 
 That gives a clean milestone:
 
 ```text
-prebuilt object-backed compile proof
-  -> per-program object-backed compile proof
+context/stack direct-JIT proof
+  -> branch-safe provenance and broader memory-width proof
 ```

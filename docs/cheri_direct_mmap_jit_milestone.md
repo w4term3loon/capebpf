@@ -33,7 +33,9 @@ The compile-level uBPF test now proves:
 - `LDXDW r0, [r1 + 4096]; EXIT` traps with `PROT_CHERI_BOUNDS`.
 - `MOV64_REG r6, r1; LDXDW r0, [r6 + 8]; EXIT` preserves the context capability tag and returns the expected value.
 - The same alias shape with offset `4096` traps with `PROT_CHERI_BOUNDS`.
-- Stack stores/loads and other unsupported memory operations are rejected during translation for now.
+- Stack scalar stores/loads through `r10` and tracked stack aliases now succeed in bounds and trap out of bounds.
+- 64-bit immediate pointer arithmetic on tracked context/stack capabilities preserves capability provenance and remains bounds-checked by hardware.
+- Uninitialized stack scalar reads return zero because the bounded eBPF stack is cleared in the CHERI prologue.
 - Clobbering `r1` before a context load is rejected, preserving the current context-capability contract.
 
 ## Why This Matters For The Thesis Claim
@@ -42,7 +44,7 @@ This is the first non-helper, non-loader-backed path where the uBPF compile API 
 
 That supports a narrower but credible claim:
 
-> A CHERI-aware uBPF JIT can carry an admitted eBPF pointer as a hardware capability and rely on CHERI bounds to catch spatial out-of-bounds context loads, while rejecting unsupported memory operations until their capability provenance rules are implemented.
+> A CHERI-aware uBPF JIT can carry an admitted eBPF pointer as a hardware capability and rely on CHERI bounds to catch spatial out-of-bounds context loads, while using explicit provenance rules for supported context/stack memory and rejecting unsupported memory operations until their capability roots are implemented.
 
 It does not yet prove a complete verifier replacement.
 
@@ -51,9 +53,11 @@ It does not yet prove a complete verifier replacement.
 The CHERI backend is intentionally restricted:
 
 - `r1` starts as the context capability.
-- simple `MOV64_REG` aliases of `r1` preserve capability provenance using `mov Cd, Cn`;
-- loads are allowed only through the context capability or a tracked alias;
-- memory stores, stack memory, atomics, and arbitrary pointer arithmetic remain fail-closed.
+- simple `MOV64_REG` aliases of `r1`/`r10` preserve capability provenance using `mov Cd, Cn`;
+- 64-bit immediate `ADD/SUB` on tracked context/stack capabilities preserves provenance and uses Morello capability add/sub;
+- context scalar loads are allowed through the context capability or tracked context aliases;
+- stack scalar loads/stores are allowed through the bounded stack capability or tracked stack aliases;
+- context stores, capability stores, atomics, helper/map-returned pointers, local calls, and untracked scalar-pointer loads remain fail-closed.
 
 The object/shared-object JIT route remains as historical fallback and can still be selected with:
 
@@ -83,8 +87,9 @@ sg docker -c 'make cheri-check'
 
 ## Next Engineering Step
 
-The next sensible step is to prove stack memory one instruction class at a time:
+The next sensible step is to harden provenance across more realistic programs:
 
-- add a focused stack-store/load test that expects in-bounds stack access to succeed and out-of-bounds stack access to trap;
-- lower stack loads/stores through the bounded `r10` capability only;
-- keep atomics, helper-returned pointers, maps, and local calls rejected until their capability-provenance rules are explicit.
+- add branch-join tests so a capability register is not treated as valid on one path after being scalar-clobbered on another;
+- expand memory-width coverage for context/stack loads and stack stores;
+- add helper-returned pointer or map-value capability roots only after their bounds and lifetime rules are explicit;
+- keep atomics, capability spills, context stores, maps, and local calls rejected until their provenance rules are explicit.
