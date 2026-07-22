@@ -209,6 +209,30 @@ main(void)
         INSN(0x79, 0, 1, 8, 0),
         INSN(0x95, 0, 0, 0, 0),
     };
+    uint8_t context_load_b_8[] = {
+        INSN(0x71, 0, 1, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t context_load_h_8[] = {
+        INSN(0x69, 0, 1, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t context_load_w_8[] = {
+        INSN(0x61, 0, 1, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t context_load_bsx_8[] = {
+        INSN(0x91, 0, 1, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t context_load_hsx_8[] = {
+        INSN(0x89, 0, 1, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t context_load_wsx_8[] = {
+        INSN(0x81, 0, 1, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
     uint8_t context_load_4096[] = {
         INSN(0x79, 0, 1, 4096, 0),
         INSN(0x95, 0, 0, 0, 0),
@@ -257,6 +281,42 @@ main(void)
         INSN(0x7b, 0xa, 0, -8, 0),
         INSN(0xb7, 0, 0, 0, 0),
         INSN(0x79, 0, 0xa, -8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_store_load_b[] = {
+        INSN(0xb7, 0, 0, 0, 0x12345678),
+        INSN(0x73, 0xa, 0, -1, 0),
+        INSN(0xb7, 0, 0, 0, 0),
+        INSN(0x71, 0, 0xa, -1, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_store_load_h[] = {
+        INSN(0xb7, 0, 0, 0, 0x12345678),
+        INSN(0x6b, 0xa, 0, -2, 0),
+        INSN(0xb7, 0, 0, 0, 0),
+        INSN(0x69, 0, 0xa, -2, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_store_load_w[] = {
+        INSN(0xb7, 0, 0, 0, 0x12345678),
+        INSN(0x63, 0xa, 0, -4, 0),
+        INSN(0xb7, 0, 0, 0, 0),
+        INSN(0x61, 0, 0xa, -4, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_signed_load_b[] = {
+        INSN(0x72, 0xa, 0, -1, -1),
+        INSN(0x91, 0, 0xa, -1, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_signed_load_h[] = {
+        INSN(0x6a, 0xa, 0, -2, -1),
+        INSN(0x89, 0, 0xa, -2, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_signed_load_w[] = {
+        INSN(0x62, 0xa, 0, -4, -1),
+        INSN(0x81, 0, 0xa, -4, 0),
         INSN(0x95, 0, 0, 0, 0),
     };
     uint8_t immediate_stack_store_load[] = {
@@ -311,6 +371,12 @@ main(void)
 
     int failures = 0;
     failures += run_compile_and_call("context_load_8", context_load_8, sizeof(context_load_8), 0xfeedfacecafebeefULL, 0);
+    failures += run_compile_and_call("context_load_b_8", context_load_b_8, sizeof(context_load_b_8), 0xefULL, 0);
+    failures += run_compile_and_call("context_load_h_8", context_load_h_8, sizeof(context_load_h_8), 0xbeefULL, 0);
+    failures += run_compile_and_call("context_load_w_8", context_load_w_8, sizeof(context_load_w_8), 0xcafebeefULL, 0);
+    failures += run_compile_and_call("context_load_bsx_8", context_load_bsx_8, sizeof(context_load_bsx_8), 0xffffffffffffffefULL, 0);
+    failures += run_compile_and_call("context_load_hsx_8", context_load_hsx_8, sizeof(context_load_hsx_8), 0xffffffffffffbeefULL, 0);
+    failures += run_compile_and_call("context_load_wsx_8", context_load_wsx_8, sizeof(context_load_wsx_8), 0xffffffffcafebeefULL, 0);
     failures += run_compile_and_call("context_load_4096", context_load_4096, sizeof(context_load_4096), 0, 1);
     failures += run_compile_and_call("context_alias_load_8", context_alias_load_8, sizeof(context_alias_load_8), 0xfeedfacecafebeefULL, 0);
     failures += run_compile_and_call("context_alias_load_4096", context_alias_load_4096, sizeof(context_alias_load_4096), 0, 1);
@@ -318,6 +384,12 @@ main(void)
     failures += run_compile_and_call("context_ptr_add_load_4096", context_ptr_add_load_4096, sizeof(context_ptr_add_load_4096), 0, 1);
     failures += run_compile_and_call("branch_preserves_context", branch_preserves_context, sizeof(branch_preserves_context), 0xfeedfacecafebeefULL, 0);
     failures += run_compile_and_call("stack_store_load", stack_store_load, sizeof(stack_store_load), 42, 0);
+    failures += run_compile_and_call("stack_store_load_b", stack_store_load_b, sizeof(stack_store_load_b), 0x78ULL, 0);
+    failures += run_compile_and_call("stack_store_load_h", stack_store_load_h, sizeof(stack_store_load_h), 0x5678ULL, 0);
+    failures += run_compile_and_call("stack_store_load_w", stack_store_load_w, sizeof(stack_store_load_w), 0x12345678ULL, 0);
+    failures += run_compile_and_call("stack_signed_load_b", stack_signed_load_b, sizeof(stack_signed_load_b), 0xffffffffffffffffULL, 0);
+    failures += run_compile_and_call("stack_signed_load_h", stack_signed_load_h, sizeof(stack_signed_load_h), 0xffffffffffffffffULL, 0);
+    failures += run_compile_and_call("stack_signed_load_w", stack_signed_load_w, sizeof(stack_signed_load_w), 0xffffffffffffffffULL, 0);
     failures += run_compile_and_call("immediate_stack_store_load", immediate_stack_store_load, sizeof(immediate_stack_store_load), 42, 0);
     failures += run_compile_and_call("stack_ptr_add_store_load", stack_ptr_add_store_load, sizeof(stack_ptr_add_store_load), 42, 0);
     failures += run_compile_and_call("uninit_stack_ptr_add_load", uninit_stack_ptr_add_load, sizeof(uninit_stack_ptr_add_load), 0, 0);

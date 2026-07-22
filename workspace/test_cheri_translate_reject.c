@@ -98,6 +98,17 @@ main(void)
         INSN(0x95, 0, 0, 0, 0),
     };
 
+    uint8_t context_width_loads[] = {
+        INSN(0x71, 0, 1, 8, 0),
+        INSN(0x69, 0, 1, 8, 0),
+        INSN(0x61, 0, 1, 8, 0),
+        INSN(0x79, 0, 1, 8, 0),
+        INSN(0x91, 0, 1, 8, 0),
+        INSN(0x89, 0, 1, 8, 0),
+        INSN(0x81, 0, 1, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
     uint8_t context_store[] = {
         INSN(0xb7, 0, 0, 0, 42),
         INSN(0x7b, 1, 0, 0, 0),
@@ -157,6 +168,25 @@ main(void)
         INSN(0x95, 0, 0, 0, 0),
     };
 
+    uint8_t stack_width_store_loads[] = {
+        INSN(0xb7, 0, 0, 0, 0x12345678),
+        INSN(0x73, 0xa, 0, -1, 0),
+        INSN(0x71, 0, 0xa, -1, 0),
+        INSN(0x6b, 0xa, 0, -2, 0),
+        INSN(0x69, 0, 0xa, -2, 0),
+        INSN(0x63, 0xa, 0, -4, 0),
+        INSN(0x61, 0, 0xa, -4, 0),
+        INSN(0x7b, 0xa, 0, -16, 0),
+        INSN(0x79, 0, 0xa, -16, 0),
+        INSN(0x72, 0xa, 0, -17, -1),
+        INSN(0x91, 0, 0xa, -17, 0),
+        INSN(0x6a, 0xa, 0, -20, -1),
+        INSN(0x89, 0, 0xa, -20, 0),
+        INSN(0x62, 0xa, 0, -24, -1),
+        INSN(0x81, 0, 0xa, -24, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
     uint8_t uninit_stack_ptr_add_load[] = {
         INSN(0xbf, 2, 10, 0, 0),
         INSN(0x07, 2, 0, 0, -8),
@@ -179,12 +209,14 @@ main(void)
     int failures = 0;
     failures += expect_translate_ok("scalar_mov_exit", scalar, sizeof(scalar));
     failures += expect_translate_ok("context_load", context_load, sizeof(context_load));
+    failures += expect_translate_ok("context_width_loads", context_width_loads, sizeof(context_width_loads));
     failures += expect_translate_ok("context_oob_load", context_oob_load, sizeof(context_oob_load));
     failures += expect_translate_ok("context_ptr_add_load", context_ptr_add_load, sizeof(context_ptr_add_load));
     failures += expect_translate_ok("context_ptr_add_oob_load", context_ptr_add_oob_load, sizeof(context_ptr_add_oob_load));
     failures += expect_translate_ok("branch_preserves_context", branch_preserves_context, sizeof(branch_preserves_context));
     failures += expect_translate_ok("stack_store_load", stack_store_load, sizeof(stack_store_load));
     failures += expect_translate_ok("stack_ptr_add_store_load", stack_ptr_add_store_load, sizeof(stack_ptr_add_store_load));
+    failures += expect_translate_ok("stack_width_store_loads", stack_width_store_loads, sizeof(stack_width_store_loads));
     failures += expect_translate_ok("uninit_stack_ptr_add_load", uninit_stack_ptr_add_load, sizeof(uninit_stack_ptr_add_load));
     failures += expect_translate_ok("immediate_stack_store", immediate_stack_store, sizeof(immediate_stack_store));
     failures += expect_translate_reject("context_store", context_store, sizeof(context_store));

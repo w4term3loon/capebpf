@@ -4,12 +4,19 @@ This note explains the development pivot from raw anonymous mmap JIT code to
 object-backed Morello purecap JIT code. It is intended as reference material for
 the final report.
 
+Status update, 2026-07-22: this is now historical/fallback context, not the
+primary implementation route. The raw anonymous mmap path was later fixed by
+entering generated Morello code in C64 mode (`addr | 1`), and the current uBPF
+integration uses that direct mmap path by default. The object-backed route remains
+useful as independent reference evidence that loader-created purecap code can
+perform the same bounded memory operations.
+
 ## The Short Version
 
 The project goal is still to make generated uBPF/eBPF JIT code benefit from
 CHERI bounds enforcement.
 
-The working path is now:
+The object-backed fallback path described here is:
 
 ```text
 raw eBPF bytes
@@ -245,7 +252,9 @@ Morello object-backed backend:
 ```
 
 That is different from a traditional JIT backend that only writes instruction
-bytes into an executable buffer.
+bytes into an executable buffer. The current primary backend has since returned
+to anonymous mmap-generated code after fixing C64 entry, but the object-backed
+route remains a useful fallback and diagnostic comparison.
 
 
 ## What "Anonymous JIT Memory" Means

@@ -61,7 +61,7 @@ sg docker -c 'make cheri-check'                       # passing CHERI translator
 sg docker -c 'make cheri-mitigations'                 # passing helper-mediated fallback proof
 sg docker -c 'make run-cheri-loader-jit-repro'        # passing loader-backed direct-code proof
 sg docker -c 'make run-cheri-objjit-context-repro'    # passing generated object-backed JIT proof
-sg docker -c 'make run-cheri-objjit-compile'          # passing uBPF compile integration for narrow direct mmap CHERI JIT path
+sg docker -c 'make run-cheri-objjit-compile'          # passing uBPF compile integration for direct mmap CHERI JIT context/stack path, including width coverage
 sg docker -c 'make run-cheri-direct-jit-repro'        # passing raw mmap/C64-entry diagnostic
 ```
 
