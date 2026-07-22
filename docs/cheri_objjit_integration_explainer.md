@@ -439,7 +439,9 @@ Under CheriBSD purecap, the current default `ubpf_compile()` path now:
    loads/stores through tracked stack capabilities.
 5. Clears the bounded eBPF stack in the prologue, so uninitialized scalar stack
    reads return zero rather than prior native stack contents.
-6. Rejects context stores, capability stores, atomics, local calls,
+6. Applies conservative branch-join provenance: a register keeps capability kind
+   only if all reaching paths preserve the same kind.
+7. Rejects context stores, capability stores, atomics, local calls,
    helper/map-returned pointers, and loads from untracked scalar pointers.
 
 ## Observed Integrated Result
@@ -456,9 +458,9 @@ context_load_8:
 context_load_4096:
     fn(ctx, sizeof(ctx)) traps with PROT_CHERI_BOUNDS
 
-context_alias_load_8 / context_ptr_add_load_8:
-    tracked aliases and immediate pointer arithmetic preserve the context
-    capability and return 0xfeedfacecafebeef
+context_alias_load_8 / context_ptr_add_load_8 / branch_preserves_context:
+    tracked aliases, immediate pointer arithmetic, and branch paths that preserve
+    the context capability return 0xfeedfacecafebeef
 
 context_alias_load_4096 / context_ptr_add_load_4096:
     tracked aliases and immediate pointer arithmetic trap with PROT_CHERI_BOUNDS
@@ -472,7 +474,7 @@ uninit_stack_ptr_add_load:
 stack_store_oob / stack_load_oob / stack_ptr_add_load_oob:
     trap with PROT_CHERI_BOUNDS
 
-context_store / capability_stack_store / clobbered_r1_load:
+context_store / capability_stack_store / clobbered_r1_load / branch_join_clobbered_context:
     rejected at compile time
 ```
 
@@ -486,9 +488,8 @@ and stack bounds for those operations.
 The main blocker is no longer code loading or basic stack memory. The remaining
 blockers are provenance generality and broader eBPF coverage:
 
-1. Branch joins are not yet modeled precisely; a future pass must ensure a
-   register is capability-kind only if all reaching paths preserve that
-   provenance.
+1. Branch joins are modeled conservatively, not path-sensitively; programs that
+   require proving a scalar branch infeasible may still reject.
 2. Memory-width coverage should be expanded and tested for `B`, `H`, `W`, `DW`,
    and signed loads.
 3. Helper-returned pointers and map values need explicit bounded capability
@@ -499,14 +500,14 @@ blockers are provenance generality and broader eBPF coverage:
 
 ## Sensible Next Iteration
 
-The next iteration should harden provenance while preserving fail-closed
-behavior.
+The next iteration should broaden supported memory shapes while preserving
+fail-closed provenance.
 
 Goal:
 
 ```text
-make branch/control-flow handling preserve capability-kind soundness, then
-expand memory widths for the already-supported context and stack roots
+expand memory widths for the already-supported context and stack roots, then
+introduce helper/map pointer roots with explicit bounds
 ```
 
 Concrete scope:
@@ -514,8 +515,7 @@ Concrete scope:
 1. Keep `run-cheri-objjit-context-repro` as the object-backed reference proof.
 2. Keep `run-cheri-objjit-compile` as the direct mmap integrated acceptance
    test.
-3. Add tests where one branch preserves a capability register and another path
-   clobbers it; the join must reject later capability loads.
+3. Keep branch-join regression tests as new pointer roots are introduced.
 4. Add byte/half/word/doubleword stack and context memory tests.
 5. Keep helper/map pointers, atomics, capability stores, context stores, and
    local calls rejected until their provenance rules are explicit.
@@ -524,5 +524,6 @@ That gives a clean milestone:
 
 ```text
 context/stack direct-JIT proof
-  -> branch-safe provenance and broader memory-width proof
+  -> branch-safe provenance proof
+  -> broader memory-width and helper/map-root proof
 ```

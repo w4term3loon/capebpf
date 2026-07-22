@@ -119,8 +119,9 @@ untracked scalar-pointer loads are rejected during CHERI translation. The
 supported path carries the `R1` context pointer and `R10` stack pointer as
 CHERI capabilities through direct anonymous mmap JIT code; in-bounds
 context/stack scalar memory accesses return successfully, out-of-bounds
-accesses trap under CHERI bounds, and uninitialized stack scalar reads return
-zero from the cleared bounded stack. The old helper/object routes remain as
+accesses trap under CHERI bounds, branch joins conservatively preserve only
+capability kinds that agree on all reaching paths, and uninitialized stack
+scalar reads return zero from the cleared bounded stack. The old helper/object routes remain as
 fallback evidence, but the primary route is now the direct mmap JIT entered in
 Morello C64 mode.
 

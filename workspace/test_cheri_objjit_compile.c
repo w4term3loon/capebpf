@@ -235,6 +235,23 @@ main(void)
         INSN(0x79, 0, 6, 0, 0),
         INSN(0x95, 0, 0, 0, 0),
     };
+    uint8_t branch_preserves_context[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0xb7, 0, 0, 0, 0),
+        INSN(0x15, 0, 0, 1, 0),
+        INSN(0xb7, 0, 0, 0, 1),
+        INSN(0x79, 0, 6, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t branch_join_clobbered_context[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0xb7, 0, 0, 0, 0),
+        INSN(0x15, 0, 0, 2, 0),
+        INSN(0xb7, 6, 0, 0, 0),
+        INSN(0x05, 0, 0, 0, 0),
+        INSN(0x79, 0, 6, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
     uint8_t stack_store_load[] = {
         INSN(0xb7, 0, 0, 0, 42),
         INSN(0x7b, 0xa, 0, -8, 0),
@@ -299,6 +316,7 @@ main(void)
     failures += run_compile_and_call("context_alias_load_4096", context_alias_load_4096, sizeof(context_alias_load_4096), 0, 1);
     failures += run_compile_and_call("context_ptr_add_load_8", context_ptr_add_load_8, sizeof(context_ptr_add_load_8), 0xfeedfacecafebeefULL, 0);
     failures += run_compile_and_call("context_ptr_add_load_4096", context_ptr_add_load_4096, sizeof(context_ptr_add_load_4096), 0, 1);
+    failures += run_compile_and_call("branch_preserves_context", branch_preserves_context, sizeof(branch_preserves_context), 0xfeedfacecafebeefULL, 0);
     failures += run_compile_and_call("stack_store_load", stack_store_load, sizeof(stack_store_load), 42, 0);
     failures += run_compile_and_call("immediate_stack_store_load", immediate_stack_store_load, sizeof(immediate_stack_store_load), 42, 0);
     failures += run_compile_and_call("stack_ptr_add_store_load", stack_ptr_add_store_load, sizeof(stack_ptr_add_store_load), 42, 0);
@@ -309,6 +327,7 @@ main(void)
     failures += expect_compile_reject("context_store", context_store, sizeof(context_store));
     failures += expect_compile_reject("capability_stack_store", capability_stack_store, sizeof(capability_stack_store));
     failures += expect_compile_reject("clobbered_r1_load", clobbered_r1_load, sizeof(clobbered_r1_load));
+    failures += expect_compile_reject("branch_join_clobbered_context", branch_join_clobbered_context, sizeof(branch_join_clobbered_context));
 
     if (failures == 0) {
         printf("\nOK integrated CHERI direct-JIT compile path passed\n");

@@ -129,6 +129,25 @@ main(void)
         INSN(0x95, 0, 0, 0, 0),
     };
 
+    uint8_t branch_preserves_context[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0xb7, 0, 0, 0, 0),
+        INSN(0x15, 0, 0, 1, 0),
+        INSN(0xb7, 0, 0, 0, 1),
+        INSN(0x79, 0, 6, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
+    uint8_t branch_join_clobbered_context[] = {
+        INSN(0xbf, 6, 1, 0, 0),
+        INSN(0xb7, 0, 0, 0, 0),
+        INSN(0x15, 0, 0, 2, 0),
+        INSN(0xb7, 6, 0, 0, 0),
+        INSN(0x05, 0, 0, 0, 0),
+        INSN(0x79, 0, 6, 8, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+
     uint8_t stack_ptr_add_store_load[] = {
         INSN(0xbf, 2, 10, 0, 0),
         INSN(0x07, 2, 0, 0, -16),
@@ -163,6 +182,7 @@ main(void)
     failures += expect_translate_ok("context_oob_load", context_oob_load, sizeof(context_oob_load));
     failures += expect_translate_ok("context_ptr_add_load", context_ptr_add_load, sizeof(context_ptr_add_load));
     failures += expect_translate_ok("context_ptr_add_oob_load", context_ptr_add_oob_load, sizeof(context_ptr_add_oob_load));
+    failures += expect_translate_ok("branch_preserves_context", branch_preserves_context, sizeof(branch_preserves_context));
     failures += expect_translate_ok("stack_store_load", stack_store_load, sizeof(stack_store_load));
     failures += expect_translate_ok("stack_ptr_add_store_load", stack_ptr_add_store_load, sizeof(stack_ptr_add_store_load));
     failures += expect_translate_ok("uninit_stack_ptr_add_load", uninit_stack_ptr_add_load, sizeof(uninit_stack_ptr_add_load));
@@ -170,6 +190,7 @@ main(void)
     failures += expect_translate_reject("context_store", context_store, sizeof(context_store));
     failures += expect_translate_reject("capability_stack_store", capability_stack_store, sizeof(capability_stack_store));
     failures += expect_translate_reject("clobbered_r1_load", clobbered_r1_load, sizeof(clobbered_r1_load));
+    failures += expect_translate_reject("branch_join_clobbered_context", branch_join_clobbered_context, sizeof(branch_join_clobbered_context));
     failures += expect_translate_reject("pointer_leak", pointer_leak, sizeof(pointer_leak));
     return failures == 0 ? 0 : 1;
 }

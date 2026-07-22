@@ -35,6 +35,7 @@ The compile-level uBPF test now proves:
 - The same alias shape with offset `4096` traps with `PROT_CHERI_BOUNDS`.
 - Stack scalar stores/loads through `r10` and tracked stack aliases now succeed in bounds and trap out of bounds.
 - 64-bit immediate pointer arithmetic on tracked context/stack capabilities preserves capability provenance and remains bounds-checked by hardware.
+- Branch joins are handled conservatively: a register remains capability-kind only if all reaching paths preserve the same capability kind.
 - Uninitialized stack scalar reads return zero because the bounded eBPF stack is cleared in the CHERI prologue.
 - Clobbering `r1` before a context load is rejected, preserving the current context-capability contract.
 
@@ -58,6 +59,7 @@ The CHERI backend is intentionally restricted:
 - context scalar loads are allowed through the context capability or tracked context aliases;
 - stack scalar loads/stores are allowed through the bounded stack capability or tracked stack aliases;
 - context stores, capability stores, atomics, helper/map-returned pointers, local calls, and untracked scalar-pointer loads remain fail-closed.
+- path-sensitive scalar reasoning is intentionally not attempted; the branch analysis is conservative and may reject programs whose safety depends on proving a branch infeasible.
 
 The object/shared-object JIT route remains as historical fallback and can still be selected with:
 
@@ -87,9 +89,9 @@ sg docker -c 'make cheri-check'
 
 ## Next Engineering Step
 
-The next sensible step is to harden provenance across more realistic programs:
+The next sensible step is to broaden the already-supported roots without weakening provenance:
 
-- add branch-join tests so a capability register is not treated as valid on one path after being scalar-clobbered on another;
 - expand memory-width coverage for context/stack loads and stack stores;
 - add helper-returned pointer or map-value capability roots only after their bounds and lifetime rules are explicit;
+- keep branch-join regression tests for every new pointer root;
 - keep atomics, capability spills, context stores, maps, and local calls rejected until their provenance rules are explicit.

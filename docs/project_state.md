@@ -32,11 +32,12 @@ Observed state:
 - The CHERI backend now rejects context stores, capability stores, atomics, local calls, and loads from untracked scalar pointers at translation time instead of compiling unsafe memory operations.
 - The CHERI backend accepts a restricted capability-memory subset: scalar loads through the `R1` context capability or tracked context aliases, and scalar stack loads/stores through the bounded `R10` stack capability or tracked stack aliases.
 - Simple `MOV64_REG` and 64-bit immediate `ADD/SUB` preserve context/stack capability provenance, so common forms such as `r6 = r1; r6 += 8; load` and `r2 = r10; r2 += -16; store/load` now execute through hardware capabilities.
+- The CHERI backend now runs a conservative control-flow register-kind analysis before emission: at branch joins, a register remains a capability only if all reaching paths agree on the same capability kind; mixed scalar/capability joins are treated as scalar and later capability memory access is rejected.
 - The CHERI backend tracks `R10` as a stack-capability kind and rejects programs that try to return a capability-kind value in `R0`; this deliberately blocks the pointer-leak exploit pattern at translation time.
 - `make cheri-mitigations` proves the first useful in-bounds/out-of-bounds differential for a context load: generated code tail-calls a compiled purecap helper for the actual memory access, the in-bounds load returns the expected value, and the out-of-bounds load traps with CHERI signal 34.
 - `make run-cheri-loader-jit-repro` proves a direct loaded-code spatial differential without a helper-mediated load: in-bounds returns the expected value, OOB traps with `PROT_CHERI_BOUNDS`.
 - `make run-cheri-objjit-context-repro` strengthens that into generated object-backed JIT evidence: raw eBPF bytes for `r0 = *(u64 *)(r1 + offset); exit` are parsed into generated Morello assembly, which returns in-bounds and traps OOB with `PROT_CHERI_BOUNDS`.
-- `make run-cheri-objjit-compile` now exercises the default direct anonymous mmap CHERI JIT through the uBPF-facing `ubpf_load()`/`ubpf_compile()` flow for context loads, context aliases, context immediate pointer arithmetic, stack scalar store/load, stack immediate pointer arithmetic, uninitialized stack reads, and stack/context OOB traps. It returns a capmode sentry for the generated mapping, returns expected in-bounds values, and traps spatial OOB accesses with `PROT_CHERI_BOUNDS`.
+- `make run-cheri-objjit-compile` now exercises the default direct anonymous mmap CHERI JIT through the uBPF-facing `ubpf_load()`/`ubpf_compile()` flow for context loads, context aliases, context immediate pointer arithmetic, branch-preserved context capabilities, stack scalar store/load, stack immediate pointer arithmetic, uninitialized stack reads, and stack/context OOB traps. It returns a capmode sentry for the generated mapping, returns expected in-bounds values, traps spatial OOB accesses with `PROT_CHERI_BOUNDS`, and rejects a branch join where one path scalar-clobbers a context capability alias.
 - `make run-exploit-tests` currently reports all three local CVE-shaped harness cases as covered under the CHERI path: OOB context read traps, pointer return is compile-blocked by register-kind policy, and uninitialized stack read is mitigated by returning zero from the cleared bounded stack.
 - The CHERI backend now has a proper first purecap prologue/epilogue: it saves/restores C29/C30 as capabilities, derives a bounded `r10` eBPF stack capability, clears the eBPF stack before execution, and rejects local function calls instead of emitting incomplete scalar stack-spill code.
 
@@ -107,6 +108,7 @@ This is not yet integrated into `ubpf_compile`, and it is not yet a general eBPF
 - Replaced the temporary minimal CHERI prologue with a first proper purecap frame setup: C29/C30 capability save/restore, bounded `r10` stack capability derivation, eBPF stack zeroing, and fail-closed rejection for local calls.
 - Added stack scalar load/store lowering through tracked stack capabilities, while rejecting context stores and attempts to store capability-kind values.
 - Added capability-preserving 64-bit immediate pointer arithmetic for tracked context/stack capabilities.
+- Added conservative control-flow register-kind analysis so branch joins meet capability provenance before emission.
 - Updated `test_cheri_objjit_compile.c` and `run-cheri-objjit-compile` to prove the direct mmap CHERI JIT path works through `ubpf_load()`/`ubpf_compile()` despite the historical target name.
 - Tightened `run-exploit-tests` so purecap runs fail if the CHERI path misses a harness case; the uninitialized-stack case is now classified as mitigated only when it returns the known zero from the cleared stack.
 - Added `host-check` and tightened the host uBPF build so it compiles host-relevant sources only.
@@ -129,15 +131,15 @@ What is not proven yet:
 
 - That the current result generalizes beyond the supported context/stack scalar-memory shapes.
 - That the helper-tail-call proof is equivalent to a full JIT. It currently proves one final context-load shape, not arbitrary eBPF memory programs.
-- That helper-returned pointers, maps, local calls, atomics, capability spills, or control-flow-sensitive pointer provenance are protected by a completed scalar/capability register contract.
+- That helper-returned pointers, maps, local calls, atomics, capability spills, or full verifier-grade path-sensitive scalar reasoning are protected by a completed scalar/capability register contract.
 
 The raw mmap direct-JIT blocker was resolved by entering generated code in Morello C64 mode (`addr | 1`) before creating/calling the entry capability. The current non-helper path is now the preferred route; the helper/object-mediated route remains only as fallback/reference.
 
 ## Recommended Next Steps
 
-1. Add control-flow-sensitive register-kind tests: branch joins must not let one path treat a scalar-clobbered register as a capability on another path.
-2. Expand stack/context memory width coverage (`B`, `H`, `W`, `DW`, signed loads) through the same capability-memory helper.
-3. Add helper-returned pointer or map-value capability roots next; keep helper/map memory rejected until returned bounds and provenance are explicit.
+1. Expand stack/context memory width coverage (`B`, `H`, `W`, `DW`, signed loads) through the same capability-memory helper.
+2. Add helper-returned pointer or map-value capability roots next; keep helper/map memory rejected until returned bounds and provenance are explicit.
+3. Add more branch/regression cases around loops and joins as new pointer roots are introduced.
 4. Keep helper-mediated and object-backed context-load lowering as fallback/reference routes only.
 5. Keep exploit tests classified by mechanism: spatial OOB bounds trap, pointer leakage policy reject, and non-spatial uninitialized-stack disclosure mitigated by zeroing.
 6. Keep `make host-check`, `sg docker -c 'make cheri-check'`, `sg docker -c 'make cheri-mitigations'`, `sg docker -c 'make run-cheri-loader-jit-repro'`, `sg docker -c 'make run-cheri-objjit-context-repro'`, `sg docker -c 'make run-cheri-direct-jit-repro'`, `sg docker -c 'make run-cheri-objjit-compile'`, and `sg docker -c 'make run-exploit-tests'` green.
