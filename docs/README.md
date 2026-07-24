@@ -32,6 +32,11 @@ Milestone note for the permanent C-to-BPF-to-CHERI-JIT path. Explains why the
 fixture exists, what clang emits, which CHERI JIT backend support was needed for
 stack register offsets, and what the passing generated-BPF test proves.
 
+### `slides-poc/`
+Static interactive slide proof of concept for the thesis presentation. It
+contains a browser-openable deck with a pipeline view, an interactive CHERI
+bounds visualization, generated-BPF context, and CVE-style result summary.
+
 ### `baseline_results.md`
 Output of `test42` (the `r0=42;exit` baseline) on purecap.
 Validates Milestone 0 and 1.
