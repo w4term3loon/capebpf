@@ -28,9 +28,9 @@ now exercises the default direct mmap CHERI JIT unless `UBPF_CHERI_USE_OBJJIT=1`
 is set.
 
 ### `generated_bpf_cheri_jit_milestone.md`
-Milestone note for the permanent C-to-BPF-to-CHERI-JIT path. Explains why the
-fixture exists, what clang emits, which CHERI JIT backend support was needed for
-stack register offsets, and what the passing generated-BPF test proves.
+Current generated C-to-BPF-to-CHERI-JIT milestone. Records the positive and
+negative fixture split, relevant emitted eBPF patterns, and the latest 6/6
+valid plus 4/4 OOB generated-BPF CHERI result.
 
 ### `slides-poc/`
 Static interactive slide proof of concept for the thesis presentation. It

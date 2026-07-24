@@ -1,132 +1,100 @@
 # CHERI-eBPF JIT Prototype
 
-This repository is a small research prototype for testing one claim:
+This repository is a research prototype for one narrow claim:
 
 > A CHERI-aware eBPF JIT can turn selected verifier-missed spatial memory bugs
-> into deterministic hardware traps.
+> into deterministic hardware traps while still executing valid generated eBPF.
 
-The project does not try to replace the whole Linux eBPF verifier. The verifier
-still owns program admission, termination, helper policy, type rules, and
-control-flow restrictions. The CHERI JIT is a second enforcement layer for
-memory accesses that reach execution.
+The project uses uBPF on CheriBSD/Morello instead of the in-kernel Linux eBPF
+runtime. That keeps the experiment focused on the JIT translation and native
+memory execution path. It is not a replacement for the Linux verifier. The
+verifier still owns program admission, termination, helper policy, type rules,
+and control-flow restrictions.
 
-## Scope
+## Current Scope
 
-The MVP uses uBPF on CheriBSD/Morello instead of the in-kernel Linux eBPF
-runtime. That keeps the experiment small while preserving the part we need to
-study: bytecode is JIT-compiled, then memory operations execute as native
-Morello instructions.
+The current implementation supports a conservative CHERI JIT subset:
 
-The thesis result should be phrased narrowly:
+- scalar values remain integer values;
+- context and stack pointers are tracked as CHERI capabilities;
+- capability arithmetic is allowed only from tracked capability roots plus scalar
+  offsets;
+- unsupported memory operations fail during CHERI translation;
+- in-bounds generated BPF context/stack accesses execute normally;
+- out-of-bounds generated BPF context/stack accesses trap under CHERI bounds.
 
-1. Reproduce CVE-shaped eBPF memory-safety failures in a controlled uBPF
-   harness.
-2. Run the same bytecode through a baseline JIT and a CHERI-aware JIT.
-3. Show that the CHERI-aware JIT traps the illegal memory access before it can
-   escape the bounded object.
-4. Measure the cost of the capability-aware path.
+The main generated-BPF result is currently:
 
-## JIT Rules
+| Category | Cases | Result |
+| --- | ---: | --- |
+| Valid generated BPF | 6/6 | returned expected values |
+| OOB generated BPF | 4/4 | trapped with `signal=34 code=1` |
+| Unexpected failures | 0 | none |
 
-The port is not a mechanical `X0-X10` to `C0-C10` rewrite.
-
-- Scalar eBPF values stay as 64-bit integer values.
-- Pointer-like eBPF values are represented as CHERI capabilities.
-- The JIT must never fabricate a valid capability from an integer.
-- Capabilities may only be derived from known roots: context, stack, map value,
-  or helper return.
-- Data loads/stores should use capability-authorized data load/store
-  instructions.
-- `CLC`/`CSC` are for loading/storing capabilities themselves, such as
-  capability spills. They are not the replacement for every normal data
-  `LDR`/`STR`.
-- Helper functions that cross a raw-pointer ABI need shims that return bounded
-  capabilities.
-
-See [JIT_PORT.md](JIT_PORT.md) for the minimal implementation contract,
-[JIT_PLAN.md](JIT_PLAN.md) for the implementation sequence, and
-[docs/project_state.md](docs/project_state.md) for the current audited state.
-
-## Repository
+## Repository Layout
 
 ```text
 .
-|-- Dockerfile            CheriBSD + Morello QEMU SDK image
-|-- Makefile              Build, VM, compile, and run targets
-|-- JIT_PLAN.md           Feasible CHERI JIT implementation sequence
-|-- JIT_PORT.md           Minimal CHERI JIT port contract
-|-- PLAN.md               Current roadmap
-|-- proposal.pdf          Thesis proposal artifact
-`-- workspace/
-    |-- cheri_jit_contract.h  Small register-state contract for the port
-    |-- test.c                Purecap OOB smoke test
-    |-- ubpf_test.c           uBPF interpreter/JIT baseline smoke test
-    `-- ubpf/                 uBPF git submodule
+|-- Dockerfile                         CheriBSD/Morello SDK container
+|-- Makefile                           build, VM, and test targets
+|-- proposal.pdf                       original thesis proposal
+|-- JIT_PORT.md                        CHERI JIT port contract
+|-- JIT_PLAN.md                        implementation sequence notes
+|-- PLAN.md                            current roadmap notes
+|-- docs/                              captured results and milestone notes
+|-- tools/                             VM and object-JIT helper scripts
+`-- workspace/                         VM-mounted source and tests
+    |-- README.md                      workspace file guide
+    |-- bpf/                           generated eBPF C fixtures
+    |-- test_cheri_generated_bpf.c     generated-BPF CHERI JIT harness
+    |-- test_cheri_translate_reject.c  CHERI translator accept/reject suite
+    `-- ubpf/                          uBPF submodule
 ```
 
-## Quick Start
+## Reproduction
+
+Initialize the submodule and Docker environment:
 
 ```sh
 git submodule update --init --recursive
 make init
+```
+
+Run host-side baseline checks:
+
+```sh
 make host-check
-make cheri-check
 ```
 
-Experimental direct-JIT checks, now passing for the restricted mmap/C64 context and stack memory path:
+Run the current CHERI regression suite:
 
 ```sh
-sg docker -c 'make run-cheri-direct-jit-repro'
-sg docker -c 'make run-cheri-objjit-compile'
+sg docker -c 'make cheri-check'
 ```
 
-Helper-mediated mitigation proof retained as a fallback/reference route. This
-runs a shape-specific generated-code stub that tail-calls compiled purecap
-helper code for the actual bounded load:
+Inspect and run the generated-BPF CHERI JIT suite directly:
 
 ```sh
-make cheri-mitigations
+make -B compile-generated-bpf
+sg docker -c 'make run-cheri-generated-bpf'
 ```
 
-Purecap one-off run:
+## Current Primary Evidence
 
-```sh
-make compile SRC=test.c BIN=test_binary
-make run BIN=test_binary
-```
+Read these first:
 
-`make run` boots the CheriBSD image in single-user mode, mounts `/workspace`
-through 9p, runs `/mnt/$(BIN)`, and powers the VM down. This avoids the current
-multi-user `devd` hang in the Morello image.
+- `docs/project_state.md`: current audit and known limitations.
+- `docs/generated_bpf_cheri_jit_milestone.md`: generated C-to-BPF-to-CHERI-JIT
+  result and fixture split.
+- `docs/cve_performance_exploration.md`: CVE and performance exploration notes.
 
-Host-side eBPF bytecode build:
+Older documents in `docs/` are retained as research notes. Treat them as
+historical unless they are repeated in `docs/project_state.md` or the generated
+BPF milestone.
 
-```sh
-make compile-bpf SRC=my_prog.c BIN=my_prog.o
-```
+## Known Limits
 
-## Current Status
-
-The submodule is initialized and host-side baseline tests are wired through
-`make host-check`. In this checkout, the x86_64 interpreter/JIT baseline works
-for `r0=42`, scalar ALU, and conditional jumps. The host exploit harness also
-confirms that verifier-invalid programs can pass through the non-capability JIT.
-
-The CHERI backend exists in the uBPF submodule and should currently be read as
-a narrow object-bounds prototype, not as a completed eBPF verifier replacement.
-Unsupported context stores, capability stores, local calls, atomics, and
-untracked scalar-pointer loads are rejected during CHERI translation. The
-supported path carries the `R1` context pointer and `R10` stack pointer as
-CHERI capabilities through direct anonymous mmap JIT code; in-bounds
-context/stack scalar memory accesses return successfully, out-of-bounds
-accesses trap under CHERI bounds, branch joins conservatively preserve only
-capability kinds that agree on all reaching paths, and uninitialized stack
-scalar reads return zero from the cleared bounded stack. The old helper/object routes remain as
-fallback evidence, but the primary route is now the direct mmap JIT entered in
-Morello C64 mode.
-
-Purecap results in `docs/` are retained as captured research notes. The latest
-audit verified Docker initialization, purecap compilation, x86_64 host tests,
-host-side CHERI translation rejection tests, purecap CHERI scalar execution, direct mmap CHERI context/stack memory tests, and CHERI translation through
-the single-user VM runner. Multi-user SSH startup is still blocked by the
-CheriBSD guest hanging at `Starting devd.`. See [docs/project_state.md](docs/project_state.md) for the current verified state and next steps.
+The prototype does not yet cover helper calls, maps, packet pointers,
+helper-returned pointer types, local calls, or atomics in the generated-BPF
+suite. The next practical artifact is a side-by-side host/x86 versus CHERI
+comparison harness over the same generated fixtures.

@@ -23,8 +23,20 @@ CHERI_CFG = /opt/cheri/output/morello-sdk/bin/cheribsd-morello-purecap.cfg
 DOCKER_VM_USER = cheri
 BPF_CLANG ?= clang
 BPF_OBJDUMP ?= llvm-objdump
-BPF_FIXTURE_SRC = workspace/bpf/stack_array.c
-BPF_FIXTURE_OBJ = workspace/bpf/stack_array.o
+BPF_POSITIVE_FIXTURES = \
+	stack_array \
+	branch_stack \
+	stack_widths \
+	context_in_bounds \
+	branch_context_in_bounds \
+	arithmetic_context_in_bounds
+BPF_NEGATIVE_FIXTURES = \
+	context_oob \
+	branch_context_oob \
+	arithmetic_context_oob \
+	stack_oob
+BPF_FIXTURES = $(BPF_POSITIVE_FIXTURES) $(BPF_NEGATIVE_FIXTURES)
+BPF_FIXTURE_OBJS = $(addprefix workspace/bpf/,$(addsuffix .o,$(BPF_FIXTURES)))
 
 .PHONY: init submodule-init start-vm stop-vm vm-ready console debug-gdb \
 	compile compile-ubpf compile-ubpf-test compile-exploit-tests \
@@ -122,9 +134,14 @@ compile-ubpf-elf:
 			ar rcs libubpf.a *.o'
 	@echo "Built $(UBPF_ELF_BUILDDIR)/libubpf.a"
 
-compile-generated-bpf:
-	$(BPF_CLANG) -target bpf -O2 -g0 -c $(BPF_FIXTURE_SRC) -o $(BPF_FIXTURE_OBJ)
-	$(BPF_OBJDUMP) -d $(BPF_FIXTURE_OBJ)
+compile-generated-bpf: $(BPF_FIXTURE_OBJS)
+	@set -e; \
+	for obj in $(BPF_FIXTURE_OBJS); do \
+		$(BPF_OBJDUMP) -d $$obj; \
+	done
+
+workspace/bpf/%.o: workspace/bpf/%.c
+	$(BPF_CLANG) -target bpf -O2 -g0 -c $< -o $@
 
 compile-cheri-generated-bpf: compile-generated-bpf compile-ubpf-elf
 	docker exec $(CONTAINER_NAME) \
