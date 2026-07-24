@@ -319,6 +319,25 @@ main(void)
         INSN(0x81, 0, 0xa, -4, 0),
         INSN(0x95, 0, 0, 0, 0),
     };
+    uint8_t stack_reg_index_store_load[] = {
+        INSN(0xb7, 2, 0, 0, 3),
+        INSN(0xb7, 4, 0, 0, 0x5a),
+        INSN(0xbf, 5, 10, 0, 0),
+        INSN(0x07, 5, 0, 0, -40),
+        INSN(0x0f, 5, 2, 0, 0),
+        INSN(0x73, 5, 4, 0, 0),
+        INSN(0x71, 0, 5, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
+    uint8_t stack_reg_sub_store_load[] = {
+        INSN(0xb7, 0, 0, 0, 42),
+        INSN(0xb7, 2, 0, 0, 8),
+        INSN(0xbf, 5, 10, 0, 0),
+        INSN(0x1f, 5, 2, 0, 0),
+        INSN(0x7b, 5, 0, 0, 0),
+        INSN(0x79, 0, 5, 0, 0),
+        INSN(0x95, 0, 0, 0, 0),
+    };
     uint8_t immediate_stack_store_load[] = {
         INSN(0x7a, 0xa, 0, -8, 42),
         INSN(0x79, 0, 0xa, -8, 0),
@@ -390,6 +409,8 @@ main(void)
     failures += run_compile_and_call("stack_signed_load_b", stack_signed_load_b, sizeof(stack_signed_load_b), 0xffffffffffffffffULL, 0);
     failures += run_compile_and_call("stack_signed_load_h", stack_signed_load_h, sizeof(stack_signed_load_h), 0xffffffffffffffffULL, 0);
     failures += run_compile_and_call("stack_signed_load_w", stack_signed_load_w, sizeof(stack_signed_load_w), 0xffffffffffffffffULL, 0);
+    failures += run_compile_and_call("stack_reg_index_store_load", stack_reg_index_store_load, sizeof(stack_reg_index_store_load), 0x5aULL, 0);
+    failures += run_compile_and_call("stack_reg_sub_store_load", stack_reg_sub_store_load, sizeof(stack_reg_sub_store_load), 42, 0);
     failures += run_compile_and_call("immediate_stack_store_load", immediate_stack_store_load, sizeof(immediate_stack_store_load), 42, 0);
     failures += run_compile_and_call("stack_ptr_add_store_load", stack_ptr_add_store_load, sizeof(stack_ptr_add_store_load), 42, 0);
     failures += run_compile_and_call("uninit_stack_ptr_add_load", uninit_stack_ptr_add_load, sizeof(uninit_stack_ptr_add_load), 0, 0);
