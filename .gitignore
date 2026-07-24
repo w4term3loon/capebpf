@@ -11,6 +11,7 @@ workspace/exploit_tests
 workspace/exploit_tests_host
 workspace/ubpf/build/
 workspace/ubpf/build-host/
+workspace/ubpf/build-elf/
 
 # Debug / exploratory binaries
 workspace/debug_jit*
@@ -26,6 +27,7 @@ workspace/test_cheri_loader_jit_repro
 workspace/test_cheri_objjit_compile
 workspace/test_cheri_objjit_context_repro
 workspace/test_cheri_tail_helper_context
+workspace/test_cheri_generated_bpf
 workspace/test_prologue
 workspace/test_b
 workspace/test_file_backed

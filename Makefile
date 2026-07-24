@@ -8,6 +8,7 @@ SCP_OPTS = -P $(PORT) -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/nul
 
 UBPF_SRCDIR = workspace/ubpf
 UBPF_BUILDDIR = workspace/ubpf/build
+UBPF_ELF_BUILDDIR = workspace/ubpf/build-elf
 UBPF_CORE = \
 	vm/ubpf_vm.c \
 	vm/ubpf_loader.c \
@@ -20,9 +21,14 @@ UBPF_CORE = \
 CHERI_CLANG = /opt/cheri/output/morello-sdk/bin/clang
 CHERI_CFG = /opt/cheri/output/morello-sdk/bin/cheribsd-morello-purecap.cfg
 DOCKER_VM_USER = cheri
+BPF_CLANG ?= clang
+BPF_OBJDUMP ?= llvm-objdump
+BPF_FIXTURE_SRC = workspace/bpf/stack_array.c
+BPF_FIXTURE_OBJ = workspace/bpf/stack_array.o
 
 .PHONY: init submodule-init start-vm stop-vm vm-ready console debug-gdb \
 	compile compile-ubpf compile-ubpf-test compile-exploit-tests \
+	compile-ubpf-elf compile-generated-bpf compile-cheri-generated-bpf run-cheri-generated-bpf \
 	compile-cheri-translate-reject run-cheri-translate-reject \
 	compile-cheri-context-load run-cheri-context-load \
 	compile-cheri-direct-jit-repro run-cheri-direct-jit-repro \
@@ -98,6 +104,39 @@ compile-ubpf:
 			cd /workspace/ubpf/build && \
 			ar rcs libubpf.a *.o'
 	@echo "Built $(UBPF_BUILDDIR)/libubpf.a"
+
+compile-ubpf-elf:
+	mkdir -p $(UBPF_ELF_BUILDDIR)
+	@echo "Compiling ubpf for purecap with ELF loader support..."
+	docker exec $(CONTAINER_NAME) \
+		sh -c 'set -e; \
+			rm -f /workspace/ubpf/build-elf/*.o /workspace/ubpf/build-elf/libubpf.a; \
+			for f in $(UBPF_CORE); do \
+				$(CHERI_CLANG) --config $(CHERI_CFG) -DUBPF_HAS_ELF_H \
+					-c -o /workspace/ubpf/build-elf/$$(basename $$f .c).o \
+					-I/workspace/ubpf/vm \
+					-I/workspace/ubpf/vm/inc \
+					/workspace/ubpf/$$f; \
+			done; \
+			cd /workspace/ubpf/build-elf && \
+			ar rcs libubpf.a *.o'
+	@echo "Built $(UBPF_ELF_BUILDDIR)/libubpf.a"
+
+compile-generated-bpf:
+	$(BPF_CLANG) -target bpf -O2 -g0 -c $(BPF_FIXTURE_SRC) -o $(BPF_FIXTURE_OBJ)
+	$(BPF_OBJDUMP) -d $(BPF_FIXTURE_OBJ)
+
+compile-cheri-generated-bpf: compile-generated-bpf compile-ubpf-elf
+	docker exec $(CONTAINER_NAME) \
+		$(CHERI_CLANG) --config $(CHERI_CFG) -DUBPF_HAS_ELF_H \
+		-o /workspace/test_cheri_generated_bpf \
+		-I/workspace/ubpf/vm \
+		-I/workspace/ubpf/vm/inc \
+		/workspace/test_cheri_generated_bpf.c \
+		/workspace/ubpf/build-elf/libubpf.a
+
+run-cheri-generated-bpf: compile-cheri-generated-bpf
+	$(MAKE) --no-print-directory run-cheri-single BIN=test_cheri_generated_bpf
 
 compile-ubpf-test:
 	docker exec $(CONTAINER_NAME) \
@@ -319,7 +358,7 @@ run-cheri-translate-reject-host: compile-cheri-translate-reject-host
 
 host-check: run-test42-host run-m2-tests-host run-m2-jmp-tests-host run-exploit-tests-host run-cheri-translate-reject-host
 
-cheri-check: run-cheri-translate-reject
+cheri-check: run-cheri-translate-reject run-cheri-generated-bpf
 
 cheri-experimental: run-cheri-context-load
 
