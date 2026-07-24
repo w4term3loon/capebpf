@@ -32,6 +32,20 @@ Current generated C-to-BPF-to-CHERI-JIT milestone. Records the positive and
 negative fixture split, relevant emitted eBPF patterns, and the latest 6/6
 valid plus 4/4 OOB generated-BPF CHERI result.
 
+### `generated_bpf_x86_cheri_comparison.md`
+Side-by-side generated-BPF host x86_64 JIT versus CHERI JIT comparison. This is
+the current presentation-friendly evidence artifact for positive controls,
+proposal CVEs, and additional CVE-style OOB analogues.
+
+### `cve_validation_matrix.md`
+Concise matrix of proposal CVEs and the three strongest additional CVE-style
+analogues currently covered by the generated-BPF and helper/map suites.
+
+### `helper_map_capability_milestone.md`
+Current helper-returned map-value capability milestone. Records the
+CVE-2021-4204-style reduced helper/map read/write OOB analogue, host baseline,
+and CHERI `PROT_CHERI_BOUNDS` result.
+
 ### `slides-poc/`
 Static interactive slide proof of concept for the thesis presentation. It
 contains a browser-openable deck with a pipeline view, an interactive CHERI
@@ -73,6 +87,9 @@ sg docker -c 'make run-cheri-loader-jit-repro'        # passing loader-backed di
 sg docker -c 'make run-cheri-objjit-context-repro'    # passing generated object-backed JIT proof
 sg docker -c 'make run-cheri-objjit-compile'          # passing uBPF compile integration for direct mmap CHERI JIT context/stack path, including width coverage
 sg docker -c 'make run-cheri-generated-bpf'           # passing host clang-generated BPF ELF through CHERI JIT
+make run-generated-bpf-host                           # passing host x86_64 generated-BPF JIT comparison baseline
+sg docker -c 'make run-cheri-helper-map-cap'          # passing helper-returned map-value capability read/write/OOB suite
+make run-helper-map-cap-host                          # passing host x86_64 helper-map baseline
 sg docker -c 'make run-cheri-direct-jit-repro'        # passing raw mmap/C64-entry diagnostic
 ```
 

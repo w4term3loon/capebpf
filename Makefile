@@ -29,12 +29,16 @@ BPF_POSITIVE_FIXTURES = \
 	stack_widths \
 	context_in_bounds \
 	branch_context_in_bounds \
-	arithmetic_context_in_bounds
+	arithmetic_context_in_bounds \
+	helper_map_read_in_bounds \
+	helper_map_write_in_bounds
 BPF_NEGATIVE_FIXTURES = \
 	context_oob \
 	branch_context_oob \
 	arithmetic_context_oob \
-	stack_oob
+	stack_oob \
+	helper_map_read_oob \
+	helper_map_write_oob
 BPF_FIXTURES = $(BPF_POSITIVE_FIXTURES) $(BPF_NEGATIVE_FIXTURES)
 BPF_FIXTURE_OBJS = $(addprefix workspace/bpf/,$(addsuffix .o,$(BPF_FIXTURES)))
 
@@ -42,6 +46,7 @@ BPF_FIXTURE_OBJS = $(addprefix workspace/bpf/,$(addsuffix .o,$(BPF_FIXTURES)))
 	compile compile-ubpf compile-ubpf-test compile-exploit-tests \
 	compile-ubpf-elf compile-generated-bpf compile-cheri-generated-bpf run-cheri-generated-bpf \
 	compile-cheri-translate-reject run-cheri-translate-reject \
+	compile-cheri-helper-map-cap run-cheri-helper-map-cap \
 	compile-cheri-context-load run-cheri-context-load \
 	compile-cheri-direct-jit-repro run-cheri-direct-jit-repro \
 	compile-cheri-loader-jit-repro run-cheri-loader-jit-repro \
@@ -154,6 +159,18 @@ compile-cheri-generated-bpf: compile-generated-bpf compile-ubpf-elf
 
 run-cheri-generated-bpf: compile-cheri-generated-bpf
 	$(MAKE) --no-print-directory run-cheri-single BIN=test_cheri_generated_bpf
+
+compile-cheri-helper-map-cap: compile-ubpf
+	docker exec $(CONTAINER_NAME) \
+		$(CHERI_CLANG) --config $(CHERI_CFG) \
+		-o /workspace/test_helper_map_cap \
+		-I/workspace/ubpf/vm \
+		-I/workspace/ubpf/vm/inc \
+		/workspace/test_helper_map_cap.c \
+		/workspace/ubpf/build/libubpf.a
+
+run-cheri-helper-map-cap: compile-cheri-helper-map-cap
+	$(MAKE) --no-print-directory run-cheri-single BIN=test_helper_map_cap
 
 compile-ubpf-test:
 	docker exec $(CONTAINER_NAME) \
@@ -269,6 +286,7 @@ run-cheri-tail-helper-context: compile-cheri-tail-helper-context
 
 # Host (non-capability) baseline: shows exploits slipping through without CHERI
 UBPF_HOST_BUILDDIR = workspace/ubpf/build-host
+UBPF_HOST_ELF_BUILDDIR = workspace/ubpf/build-host-elf
 UBPF_HOST_CORE = \
 	vm/ubpf_vm.c \
 	vm/ubpf_loader.c \
@@ -281,10 +299,12 @@ HOST_CFLAGS ?= -O2 -Wall -Wextra
 HOST_UBPF_CFLAGS ?= $(HOST_CFLAGS) -Wno-cast-function-type -Wno-sign-compare -Wno-unused-function
 HOST_CHERI_CFLAGS ?= $(HOST_CFLAGS) -Wno-old-style-declaration -Wno-sign-compare -Wno-unused-function -Wno-unused-variable
 
-.PHONY: compile-ubpf-host compile-test42-host run-test42-host \
+.PHONY: compile-ubpf-host compile-ubpf-host-elf compile-test42-host run-test42-host \
 	compile-m2-tests-host run-m2-tests-host \
 	compile-m2-jmp-tests-host run-m2-jmp-tests-host \
 	compile-exploit-tests-host run-exploit-tests-host \
+	compile-generated-bpf-host run-generated-bpf-host generated-bpf-comparison \
+	compile-helper-map-cap-host run-helper-map-cap-host helper-map-cap-comparison \
 	run-cheri-translate-reject-host compile-cheri-translate-reject-host host-check cheri-check cheri-experimental cheri-mitigations
 
 compile-ubpf-host:
@@ -299,6 +319,50 @@ compile-ubpf-host:
 	done
 	@cd $(UBPF_HOST_BUILDDIR) && ar rcs libubpf.a *.o
 	@echo "Built $(UBPF_HOST_BUILDDIR)/libubpf.a"
+
+compile-ubpf-host-elf:
+	mkdir -p $(UBPF_HOST_ELF_BUILDDIR)
+	@echo "Compiling ubpf for host (x86_64, ELF loader, no capabilities)..."
+	@rm -f $(UBPF_HOST_ELF_BUILDDIR)/*.o $(UBPF_HOST_ELF_BUILDDIR)/libubpf.a
+	@set -e; \
+	for f in $(UBPF_HOST_CORE); do \
+		$(HOST_CC) -c $(HOST_UBPF_CFLAGS) -DUBPF_HAS_ELF_H -I$(UBPF_SRCDIR)/vm -I$(UBPF_SRCDIR)/vm/inc \
+			-o $(UBPF_HOST_ELF_BUILDDIR)/$$(basename $$f .c).o \
+			$(UBPF_SRCDIR)/$$f; \
+	done
+	@cd $(UBPF_HOST_ELF_BUILDDIR) && ar rcs libubpf.a *.o
+	@echo "Built $(UBPF_HOST_ELF_BUILDDIR)/libubpf.a"
+
+compile-generated-bpf-host: compile-generated-bpf compile-ubpf-host-elf
+	$(HOST_CC) $(HOST_CFLAGS) -DUBPF_HAS_ELF_H -o workspace/test_generated_bpf_host \
+		-I$(UBPF_SRCDIR)/vm \
+		-I$(UBPF_SRCDIR)/vm/inc \
+		-Iworkspace \
+		workspace/test_generated_bpf_host.c \
+		$(UBPF_HOST_ELF_BUILDDIR)/libubpf.a
+	@echo "Built workspace/test_generated_bpf_host"
+
+run-generated-bpf-host: compile-generated-bpf-host
+	@echo ""
+	@echo "########## GENERATED BPF BASELINE - x86_64 host JIT ##########"
+	@./workspace/test_generated_bpf_host
+
+generated-bpf-comparison: run-generated-bpf-host run-cheri-generated-bpf
+
+compile-helper-map-cap-host: compile-ubpf-host
+	$(HOST_CC) $(HOST_CFLAGS) -o workspace/test_helper_map_cap_host \
+		-I$(UBPF_SRCDIR)/vm \
+		-I$(UBPF_SRCDIR)/vm/inc \
+		workspace/test_helper_map_cap.c \
+		$(UBPF_HOST_BUILDDIR)/libubpf.a
+	@echo "Built workspace/test_helper_map_cap_host"
+
+run-helper-map-cap-host: compile-helper-map-cap-host
+	@echo ""
+	@echo "########## HELPER MAP BASELINE - x86_64 host JIT ##########"
+	@./workspace/test_helper_map_cap_host
+
+helper-map-cap-comparison: run-helper-map-cap-host run-cheri-helper-map-cap
 
 compile-test42-host: compile-ubpf-host
 	$(HOST_CC) $(HOST_CFLAGS) -o workspace/test42 \
@@ -375,7 +439,7 @@ run-cheri-translate-reject-host: compile-cheri-translate-reject-host
 
 host-check: run-test42-host run-m2-tests-host run-m2-jmp-tests-host run-exploit-tests-host run-cheri-translate-reject-host
 
-cheri-check: run-cheri-translate-reject run-cheri-generated-bpf
+cheri-check: run-cheri-translate-reject run-cheri-generated-bpf run-cheri-helper-map-cap
 
 cheri-experimental: run-cheri-context-load
 

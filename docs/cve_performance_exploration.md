@@ -157,22 +157,28 @@ Source: https://ubuntu.com/security/CVE-2021-29154
 Ubuntu describes this as an eBPF ring-buffer argument validation problem that
 could cause OOB memory access.
 
-Why it is not currently testable:
+Current status:
 
-- The current prototype has no ring-buffer helper or map/helper memory model.
-- It becomes relevant only after helper/map capability roots are introduced.
+- A reduced helper/map capability analogue is now implemented in
+  `workspace/test_helper_map_cap.c`.
+- It is documented in `docs/helper_map_capability_milestone.md`.
+- The current fixture is not a full ring-buffer helper port, but it does cover
+  the final shape: helper-returned memory root plus invalid read/write offset.
 
 Source: https://ubuntu.com/security/CVE-2021-4204
 
 ## Recommended CVE Test Order
 
-1. Add a CVE-2023-2163-style branch/path-pruning analogue.
-2. Add ALU32/range-tracking inspired OOB pointer arithmetic tests for
+1. Keep extending the CVE-2023-2163-style branch/path-pruning analogue.
+2. Keep extending ALU32/range-tracking inspired OOB pointer arithmetic tests for
    CVE-2020-8835, CVE-2021-3490, and CVE-2021-31440.
-3. Add OOB write cases, not only OOB reads.
-4. Add sign-extension-derived bad-offset tests for CVE-2017-16995.
-5. Defer CVE-2022-23222 and CVE-2021-4204 until helper/map pointer roots exist.
-6. Treat CVE-2021-29154 as a separate JIT-codegen robustness topic, not as core
+3. Add more OOB write cases, not only OOB reads.
+4. Expand the CVE-2021-4204 helper/map analogue toward real ring-buffer helper
+   semantics.
+5. Add sign-extension-derived bad-offset tests for CVE-2017-16995.
+6. Defer CVE-2022-23222 until helper-returned pointer nullability and
+   `PTR_OR_NULL`-style state are modeled.
+7. Treat CVE-2021-29154 as a separate JIT-codegen robustness topic, not as core
    evidence for verifier simplification.
 
 ## Temporary Performance Probe

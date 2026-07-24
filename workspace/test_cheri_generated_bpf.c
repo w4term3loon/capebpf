@@ -8,23 +8,10 @@
 #include <unistd.h>
 
 #include "ubpf.h"
+#define GENERATED_BPF_OBJECT_ROOT "/mnt/bpf/"
+#include "generated_bpf_cases.h"
 
-#define BPF_OBJECT(name) "/mnt/bpf/" name ".o"
-
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
-
-enum generated_bpf_expectation {
-    EXPECT_RETURN,
-    EXPECT_CHERI_TRAP,
-};
-
-struct generated_bpf_case {
-    const char* name;
-    const char* object_path;
-    const char* symbol;
-    uint64_t expected_result;
-    enum generated_bpf_expectation expectation;
-};
+extern void ubpf_cheri_set_map_value_helper_index(struct ubpf_vm* vm, int index);
 
 static volatile sig_atomic_t expect_signal_trap;
 
@@ -32,6 +19,76 @@ static const char*
 expectation_label(enum generated_bpf_expectation expectation)
 {
     return expectation == EXPECT_CHERI_TRAP ? "expect CHERI trap" : "expect return value";
+}
+
+static const char*
+sigprot_code_name(int code)
+{
+    switch (code) {
+#ifdef PROT_CHERI_BOUNDS
+    case PROT_CHERI_BOUNDS:
+        return "PROT_CHERI_BOUNDS";
+#endif
+#ifdef PROT_CHERI_TAG
+    case PROT_CHERI_TAG:
+        return "PROT_CHERI_TAG";
+#endif
+#ifdef PROT_CHERI_SEALED
+    case PROT_CHERI_SEALED:
+        return "PROT_CHERI_SEALED";
+#endif
+#ifdef PROT_CHERI_TYPE
+    case PROT_CHERI_TYPE:
+        return "PROT_CHERI_TYPE";
+#endif
+#ifdef PROT_CHERI_PERM
+    case PROT_CHERI_PERM:
+        return "PROT_CHERI_PERM";
+#endif
+#ifdef PROT_CHERI_IMPRECISE
+    case PROT_CHERI_IMPRECISE:
+        return "PROT_CHERI_IMPRECISE";
+#endif
+#ifdef PROT_CHERI_STORELOCAL
+    case PROT_CHERI_STORELOCAL:
+        return "PROT_CHERI_STORELOCAL";
+#endif
+#ifdef PROT_CHERI_CINVOKE
+    case PROT_CHERI_CINVOKE:
+        return "PROT_CHERI_CINVOKE";
+#endif
+#ifdef PROT_CHERI_SYSREG
+    case PROT_CHERI_SYSREG:
+        return "PROT_CHERI_SYSREG";
+#endif
+#ifdef PROT_CHERI_UNALIGNED_BASE
+    case PROT_CHERI_UNALIGNED_BASE:
+        return "PROT_CHERI_UNALIGNED_BASE";
+#endif
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static uint64_t
+map_lookup_helper(uint64_t p0, uint64_t p1, uint64_t p2, uint64_t p3, uint64_t p4, void* ctx)
+{
+    (void)p0;
+    (void)p1;
+    (void)p2;
+    (void)p3;
+    (void)p4;
+    return (uint64_t)(uintptr_t)ctx;
+}
+
+static void
+prepare_words(uint64_t* words, size_t word_count)
+{
+    for (size_t i = 0; i < word_count; i++) {
+        words[i] = 0;
+    }
+    words[0] = 0x1000ULL;
+    words[1] = 0x2000ULL;
 }
 
 static void*
@@ -79,6 +136,18 @@ static void
 trap_handler(int signo, siginfo_t* info, void* uctx)
 {
     (void)uctx;
+#ifdef SIGPROT
+    if (signo == SIGPROT) {
+        printf("  trapped: signal=%d code=%d(%s) trapno=%d capreg=%d address=%p\n",
+            signo,
+            info ? info->si_code : -1,
+            info ? sigprot_code_name(info->si_code) : "<no-siginfo>",
+            info ? info->si_trapno : -1,
+            info ? info->si_capreg : -1,
+            info ? info->si_addr : NULL);
+        _exit(expect_signal_trap ? 0 : 31);
+    }
+#endif
     printf("  trapped: signal=%d code=%d address=%p\n",
         signo,
         info ? info->si_code : -1,
@@ -125,6 +194,18 @@ load_compile_and_call(const struct generated_bpf_case* test_case)
         return 2;
     }
 
+    ubpf_cheri_set_map_value_helper_index(vm, GENERATED_BPF_HELPER_MAP_LOOKUP);
+    if (ubpf_register(
+            vm,
+            GENERATED_BPF_HELPER_MAP_LOOKUP,
+            GENERATED_BPF_HELPER_MAP_NAME,
+            as_external_function_t(map_lookup_helper)) != 0) {
+        fprintf(stderr, "ubpf_register failed\n");
+        ubpf_destroy(vm);
+        free(elf);
+        return 2;
+    }
+
     char* errmsg = NULL;
     if (ubpf_load_elf_ex(vm, elf, elf_len, test_case->symbol, &errmsg) < 0) {
         fprintf(stderr, "ubpf_load_elf_ex failed: %s\n", errmsg ? errmsg : "<no error>");
@@ -143,8 +224,19 @@ load_compile_and_call(const struct generated_bpf_case* test_case)
         return 1;
     }
 
-    uint64_t ctx[] = {0x1000ULL, 0x2000ULL};
-    uint64_t result = fn(ctx, sizeof(ctx));
+    uint64_t ctx[2];
+    uint64_t map[2];
+    prepare_words(ctx, sizeof(ctx) / sizeof(ctx[0]));
+    prepare_words(map, sizeof(map) / sizeof(map[0]));
+
+    void* mem = ctx;
+    size_t mem_len = sizeof(ctx);
+    if (test_case->memory_root == GENERATED_ROOT_HELPER_MAP) {
+        mem = map;
+        mem_len = sizeof(map);
+    }
+
+    uint64_t result = fn(mem, mem_len);
     printf("  returned: 0x%" PRIx64 "\n", result);
     printf("  expected: 0x%" PRIx64 "\n", test_case->expected_result);
 
@@ -164,6 +256,8 @@ run_case(const struct generated_bpf_case* test_case)
     printf("\n[generated BPF CHERI JIT: %s]\n", test_case->name);
     printf("  object:   %s\n", test_case->object_path);
     printf("  symbol:   %s\n", test_case->symbol);
+    printf("  relevance: %s\n", test_case->cve_relevance);
+    printf("  coverage: %s\n", test_case->coverage);
     printf("  outcome:  %s\n", expectation_label(test_case->expectation));
 
     pid_t pid = fork();
@@ -200,22 +294,9 @@ main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("generated BPF CHERI JIT test suite\n");
 
-    const struct generated_bpf_case cases[] = {
-        {"stack_array", BPF_OBJECT("stack_array"), "foo", 0x6aULL, EXPECT_RETURN},
-        {"branch_stack", BPF_OBJECT("branch_stack"), "foo", 0x24ULL, EXPECT_RETURN},
-        {"stack_widths", BPF_OBJECT("stack_widths"), "foo", 0x64ULL, EXPECT_RETURN},
-        {"context_in_bounds", BPF_OBJECT("context_in_bounds"), "foo", 0x3000ULL, EXPECT_RETURN},
-        {"branch_context_in_bounds", BPF_OBJECT("branch_context_in_bounds"), "foo", 0x2000ULL, EXPECT_RETURN},
-        {"arithmetic_context_in_bounds", BPF_OBJECT("arithmetic_context_in_bounds"), "foo", 0x2000ULL, EXPECT_RETURN},
-        {"context_oob", BPF_OBJECT("context_oob"), "foo", 0, EXPECT_CHERI_TRAP},
-        {"branch_context_oob", BPF_OBJECT("branch_context_oob"), "foo", 0, EXPECT_CHERI_TRAP},
-        {"arithmetic_context_oob", BPF_OBJECT("arithmetic_context_oob"), "foo", 0, EXPECT_CHERI_TRAP},
-        {"stack_oob", BPF_OBJECT("stack_oob"), "foo", 0, EXPECT_CHERI_TRAP},
-    };
-
     int failures = 0;
-    for (size_t i = 0; i < ARRAY_SIZE(cases); i++) {
-        failures += run_case(&cases[i]);
+    for (size_t i = 0; i < GENERATED_BPF_CASE_COUNT; i++) {
+        failures += run_case(&generated_bpf_cases[i]);
     }
 
     if (failures) {

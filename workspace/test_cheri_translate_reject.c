@@ -63,7 +63,9 @@ expect_translate_reject(const char *name, const uint8_t *prog, size_t prog_len)
     int matched = errmsg &&
         (strstr(errmsg, "does not yet support memory opcode") ||
          strstr(errmsg, "tracked context or stack capabilities") ||
+         strstr(errmsg, "tracked context, stack, or map-value capabilities") ||
          strstr(errmsg, "tracked stack capabilities") ||
+         strstr(errmsg, "tracked stack or map-value capabilities") ||
          strstr(errmsg, "does not allow storing a capability value") ||
          strstr(errmsg, "does not allow returning a capability value"));
     printf("%s %s: CHERI translate rejected: %s\n",
